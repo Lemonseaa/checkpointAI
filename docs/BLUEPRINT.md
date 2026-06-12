@@ -23,6 +23,14 @@ Loop Harness 的核心不是“让 AI 干活”，而是：
 证明一次改动是否值得保留。
 ```
 
+更准确地说，Loop Harness 是外部工作流的控制台：
+
+```text
+接入工作流 -> 看清工作流 -> 找到黑盒 -> 比较改动 -> 生成证据包 -> 人类决策 -> 沉淀偏好
+```
+
+工作流可以来自 Dify、TradingAgents-style team、CrewAI、自写脚本、量化回测系统或内容生产系统。Loop Harness 不抢它们的执行位置，只负责把它们变成可审查的工程对象。
+
 ---
 
 ## Core Question
@@ -101,6 +109,23 @@ Auto live trading / auto publishing
 | Backup / Rollback | 支持恢复 |
 | Reports | 把证据变成人能读懂的报告 |
 | Methodology Profile | 人的方法论、审美、风险偏好参与判断 |
+| Charts | 用趋势图和对比图证明优化是否真实 |
+
+---
+
+## Core Product Surfaces
+
+Loop Harness 的 UI 和 API 应该围绕五个核心板块组织：
+
+| Surface | Purpose |
+|---|---|
+| Workflow Map | 自动可视化外部工作流，展示节点、路径、黑盒、指标来源和可优化位置 |
+| Evidence Review | 把 baseline、candidate、gap、guardrail、replay/shadow 组成完整证据包 |
+| Approval Inbox | 所有需要人判断的 proposal / review package / rollback 集中处理 |
+| Optimization Charts | 展示改动后的指标趋势、baseline vs candidate、风险和成本变化 |
+| Human Methodology | 人类自己维护审美、风险偏好、方法论；Hermes 只能协助总结草稿 |
+
+不做拖拽 Workflow Builder。未来可以做“语言 + 表单”生成工作流草图，但它是辅助入口，不是主产品。
 
 ---
 
@@ -158,6 +183,8 @@ baseline vs candidate comparison
 metric delta visualization
 evidence comparison -> approval proposal
 repeatable quant-shaped evidence drill
+review package generation
+review package approval decision flow
 ```
 
 仍然不能宣称：
@@ -206,9 +233,11 @@ repeatable quant-shaped evidence drill
 | `docs/BLUEPRINT.md` | 当前方向总纲 |
 | `docs/STRATEGIC_RESET_PLAN.md` | 新执行计划 |
 | `docs/core_innovation/` | Loop Harness 自己必须掌握的核心创新 |
+| `docs/core_innovation/CORE_INNOVATION.md` | 核心创新总纲：工作流渗透、证据包、图表、人的方法论 |
 | `docs/core_innovation/metrics_reference.md` | 指标参考 |
 | `docs/core_innovation/user_preference.md` | 人类偏好 / Hermes 草稿机制 |
 | `docs/borrowed_wheels/` | 外部参考项目、替代轮子、接入检查 |
+| `docs/borrowed_wheels/WHEEL_STRATEGY.md` | 直接使用 / 借鉴 / 自研 / 连接器边界 |
 | `docs/borrowed_wheels/legacy_replacement_matrix.md` | 旧模块替换/重写/保留/隔离矩阵 |
 | `docs/borrowed_wheels/reference_projects.md` | 外部参考项目：哪些借鉴、哪些替代、哪些不做 |
 | `docs/borrowed_wheels/adapter_checklist.md` | Adapter 接入评估清单 |

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import unittest
+from pathlib import Path
 
 from loop_harness import (
     adapter,
@@ -38,6 +40,29 @@ from loop_harness import (
 
 class LegacyBoundaryTest(unittest.TestCase):
     """Legacy packages must advertise their cleanup status."""
+
+    def test_evidence_mainline_does_not_import_frozen_execution_layer(self) -> None:
+        """Evidence modules must not grow back into the old runtime/workflow platform."""
+        forbidden = {
+            "loop_harness.businessline",
+            "loop_harness.control",
+            "loop_harness.runtime",
+            "loop_harness.workflow",
+        }
+        evidence_dir = Path(__file__).resolve().parents[2] / "loop_harness" / "evidence"
+
+        for path in evidence_dir.glob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            imports: set[str] = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imports.update(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imports.add(node.module)
+
+            leaked = {name for name in imports if name in forbidden or any(name.startswith(f"{item}.") for item in forbidden)}
+            with self.subTest(path=path.name):
+                self.assertEqual(leaked, set())
 
     def test_frozen_legacy_modules_expose_status(self) -> None:
         """Frozen modules stay import-compatible but are no longer mainline."""

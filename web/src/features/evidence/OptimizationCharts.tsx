@@ -25,6 +25,8 @@ export function OptimizationCharts({ chart, highlightedRunId }: OptimizationChar
         <p className="mt-1 text-sm text-muted">{chart.summary}</p>
       </div>
 
+      <ImpactSummary chart={chart} />
+
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="rounded-md border border-border bg-white p-3">
           <ScatterPlot points={points} highlightedRunId={highlightedRunId} />
@@ -47,6 +49,76 @@ export function OptimizationCharts({ chart, highlightedRunId }: OptimizationChar
         {points.map((point) => (
           <CandidateRow key={point.run_id} point={point} highlighted={point.run_id === highlightedRunId} />
         ))}
+      </div>
+    </div>
+  );
+}
+
+function ImpactSummary({ chart }: { chart: OptimizationChartPayload }) {
+  const best = chart.candidate_points.find((point) => point.best_candidate);
+  if (!best) {
+    return (
+      <div className="rounded-md border border-border bg-panel p-3 text-sm text-muted">
+        Baseline vs best candidate cannot be calculated because no candidate passed guardrails.
+      </div>
+    );
+  }
+  const rows = [
+    {
+      label: "Return change",
+      baseline: chart.baseline_metrics.total_return,
+      candidate: best.total_return,
+      betterWhen: "higher" as const
+    },
+    {
+      label: "Sharpe uplift",
+      baseline: chart.baseline_metrics.sharpe,
+      candidate: best.sharpe,
+      betterWhen: "higher" as const
+    },
+    {
+      label: "Drawdown change",
+      baseline: chart.baseline_metrics.max_drawdown,
+      candidate: best.max_drawdown,
+      betterWhen: "lower" as const
+    }
+  ];
+  return (
+    <div className="rounded-md border border-border bg-white p-3">
+      <div className="text-sm font-medium text-ink">Baseline vs best candidate</div>
+      <div className="mt-3 grid gap-2 md:grid-cols-3">
+        {rows.map((row) => (
+          <ImpactMetric key={row.label} {...row} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ImpactMetric({
+  label,
+  baseline,
+  candidate,
+  betterWhen
+}: {
+  label: string;
+  baseline?: number | null;
+  candidate?: number | null;
+  betterWhen: "higher" | "lower";
+}) {
+  const diff = candidate === undefined || candidate === null || baseline === undefined || baseline === null ? null : candidate - baseline;
+  const improved = diff === null ? false : betterWhen === "higher" ? diff > 0 : diff < 0;
+  const tone = improved ? "text-emerald-700" : diff === null || diff === 0 ? "text-muted" : "text-red-700";
+  return (
+    <div className="rounded-md border border-border bg-panel p-3">
+      <div className="text-xs font-medium uppercase text-muted">{label}</div>
+      <div className="mt-2 flex items-baseline justify-between gap-2">
+        <span className="text-sm text-muted">{formatNumber(baseline)}</span>
+        <span className={`text-sm font-semibold ${tone}`}>{diff === null ? "-" : `${diff >= 0 ? "+" : ""}${diff.toFixed(3)}`}</span>
+        <span className="text-sm font-medium text-ink">{formatNumber(candidate)}</span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded bg-slate-200">
+        <div className={`h-full ${improved ? "bg-emerald-500" : "bg-red-500"}`} style={{ width: impactWidth(diff) }} />
       </div>
     </div>
   );
@@ -162,6 +234,13 @@ function formatNumber(value?: number | null) {
     return "-";
   }
   return value.toFixed(3);
+}
+
+function impactWidth(diff: number | null) {
+  if (diff === null) {
+    return "4%";
+  }
+  return `${Math.max(8, Math.min(100, Math.abs(diff) * 240))}%`;
 }
 
 function shortRun(runId: string) {

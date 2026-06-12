@@ -18,9 +18,18 @@ from loop_harness.evidence.models import (
     EvidenceReport,
     ExternalWorkflowRun,
     IngestResult,
+    StoredEvidenceRun,
     WorkflowVisualization,
 )
 from loop_harness.evidence.quality import EvidenceQualityGate
+from loop_harness.evidence.quant_contracts import QuantEvidenceContractValidator
+from loop_harness.evidence.replay import PackageReplayValidator, ReplayValidationResult
+from loop_harness.evidence.review_decision import (
+    ReviewDecisionStatus,
+    ReviewPackageDecision,
+    ReviewPackageDecisionStore,
+)
+from loop_harness.evidence.review_package import EvidenceReviewPackage, EvidenceReviewPackageBuilder
 from loop_harness.evidence.storage import EvidenceStore
 from loop_harness.evidence.workflow_map import (
     NodeEvidenceDetail,
@@ -56,6 +65,11 @@ class EvidenceService:
         if not validation.accepted:
             details = "; ".join(issue.message for issue in validation.issues)
             raise ValueError(f"Workflow contract rejected: {details}")
+        if self._is_quant_payload(payload):
+            quant_validation = QuantEvidenceContractValidator().validate(payload)
+            if not quant_validation.accepted:
+                details = "; ".join(issue.message for issue in quant_validation.issues)
+                raise ValueError(f"Quant evidence contract rejected: {details}")
         run = ExternalWorkflowRun.model_validate(payload)
         visualization = self.build_visualization(run)
         report = self.build_report(run, visualization)
@@ -161,6 +175,126 @@ class EvidenceService:
             candidates=candidates,
             comparisons=comparisons,
         )
+
+    def review_package_for_runs(
+        self,
+        baseline_run_id: str,
+        candidate_run_ids: list[str],
+    ) -> EvidenceReviewPackage:
+        """Build a portable evidence review package."""
+
+        if not candidate_run_ids:
+            raise ValueError("Review package requires at least one candidate run.")
+        baseline = self.store.get_run(baseline_run_id)
+        if baseline is None:
+            raise ValueError(f"Unknown baseline run: {baseline_run_id}")
+        candidates = self._stored_candidates(candidate_run_ids)
+        comparisons = [self.compare(baseline_run_id, candidate.run.run_id) for candidate in candidates]
+        chart = self.optimization_chart_for_runs(baseline_run_id, candidate_run_ids)
+        graph_run_id = chart.best_candidate_run_id or candidate_run_ids[0]
+        graph = self.graph_for_run(graph_run_id)
+        gaps = [self.gap_report(candidate.run.run_id) for candidate in candidates]
+        return EvidenceReviewPackageBuilder().build(
+            baseline=baseline,
+            candidates=candidates,
+            graph=graph,
+            chart=chart,
+            comparison_reports=comparisons,
+            gap_reports=gaps,
+        )
+
+    def validate_review_package(self, package: EvidenceReviewPackage) -> ReplayValidationResult:
+        """Validate a review package against current stored evidence."""
+
+        stored_runs = [
+            stored
+            for run_id in [package.baseline_run_id, *package.candidate_run_ids]
+            if (stored := self.store.get_run(run_id)) is not None
+        ]
+        return self.validate_review_package_with_runs(package, stored_runs)
+
+    @staticmethod
+    def validate_review_package_with_runs(
+        package: EvidenceReviewPackage,
+        stored_runs: list[StoredEvidenceRun],
+    ) -> ReplayValidationResult:
+        """Validate a review package against provided stored runs."""
+
+        return PackageReplayValidator().validate(package, stored_runs)
+
+    def submit_review_package(self, package: EvidenceReviewPackage, reason: str) -> ReviewPackageDecision:
+        """Submit a replay-valid package for human review."""
+
+        cleaned_reason = reason.strip()
+        if not cleaned_reason:
+            raise ValueError("Review package submission requires a reason.")
+        validation = self.validate_review_package(package)
+        if not validation.valid:
+            raise ValueError(f"Review package is not replay-valid: {validation.summary}")
+        decision = ReviewPackageDecision(
+            package_id=package.package_id,
+            scenario_id=package.scenario_id,
+            workflow_id=package.workflow_id,
+            baseline_run_id=package.baseline_run_id,
+            candidate_run_ids=package.candidate_run_ids,
+            recommended_action=package.recommended_action,
+            reason=cleaned_reason,
+            metadata={
+                "package_markdown": package.markdown,
+                "best_candidate_run_id": package.metadata.get("best_candidate_run_id"),
+                "guardrail_summary": package.chart.guardrail_summary,
+                "gap_summary": package.gap_summary,
+            },
+        )
+        return ReviewPackageDecisionStore(self.store.path).create(decision)
+
+    def approve_review_package(self, decision_id: str, comment: str) -> ReviewPackageDecision:
+        """Approve one pending review package decision."""
+
+        return self._decide_review_package(decision_id, ReviewDecisionStatus.APPROVED, comment)
+
+    def reject_review_package(self, decision_id: str, comment: str) -> ReviewPackageDecision:
+        """Reject one pending review package decision."""
+
+        return self._decide_review_package(decision_id, ReviewDecisionStatus.REJECTED, comment)
+
+    def list_review_package_decisions(
+        self,
+        scenario_id: str | None = None,
+        status: str | None = None,
+    ) -> list[ReviewPackageDecision]:
+        """List review package decisions."""
+
+        status_filter = ReviewDecisionStatus(status) if status else None
+        return ReviewPackageDecisionStore(self.store.path).list(scenario_id=scenario_id, status=status_filter)
+
+    def review_package_decision_for_package(self, package_id: str) -> ReviewPackageDecision:
+        """Return the latest review decision for one review package."""
+
+        decision = ReviewPackageDecisionStore(self.store.path).get_by_package(package_id)
+        if decision is None:
+            raise ValueError(f"Unknown review package decision for package: {package_id}")
+        return decision
+
+    def _decide_review_package(
+        self,
+        decision_id: str,
+        status: ReviewDecisionStatus,
+        comment: str,
+    ) -> ReviewPackageDecision:
+        cleaned_comment = comment.strip()
+        if not cleaned_comment:
+            raise ValueError("Review package decision requires a comment.")
+        return ReviewPackageDecisionStore(self.store.path).update_status(decision_id, status, cleaned_comment)
+
+    def _stored_candidates(self, candidate_run_ids: list[str]) -> list[StoredEvidenceRun]:
+        candidates: list[StoredEvidenceRun] = []
+        for candidate_run_id in candidate_run_ids:
+            candidate = self.store.get_run(candidate_run_id)
+            if candidate is None:
+                raise ValueError(f"Unknown candidate run: {candidate_run_id}")
+            candidates.append(candidate)
+        return candidates
 
     def build_visualization(self, run: ExternalWorkflowRun) -> WorkflowVisualization:
         """Build diagnostic workflow map data for one imported run."""
@@ -434,3 +568,13 @@ class EvidenceService:
         if not isinstance(loaded, dict):
             raise ValueError("Workflow import file must contain a JSON/YAML object.")
         return loaded
+
+    @staticmethod
+    def _is_quant_payload(payload: dict[str, Any]) -> bool:
+        metadata = payload.get("metadata", {})
+        if not isinstance(metadata, dict):
+            return False
+        contract = str(metadata.get("contract", "")).lower()
+        data_source = str(metadata.get("data_source", "")).lower()
+        domain = str(metadata.get("domain", "")).lower()
+        return contract == "quant_evidence_v1" or data_source == "csv_import" or domain == "quant_strict"

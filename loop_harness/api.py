@@ -23,9 +23,11 @@ from loop_harness.evidence import (
     CandidateBoundary,
     CandidateChange,
     EvidenceBaselineStore,
+    EvidenceReviewPackage,
     HumanDecisionMemory,
     OptimizationGoalProfile,
     OptimizationGoalStore,
+    ReviewPackageDecisionStore,
     ShadowReplayItem,
     ShadowReplayQueueStore,
     WorkflowContractValidator,
@@ -314,6 +316,189 @@ def create_app(
                 status_code=404,
                 detail=_api_error("evidence.run_not_found", str(exc), {}),
             ) from None
+
+    @app.post("/api/evidence/review-packages")
+    def evidence_review_package(
+        payload: dict[str, Any],
+        _auth: None = Depends(require_auth),
+    ) -> dict[str, Any]:
+        baseline_run_id = str(payload.get("baseline_run_id", ""))
+        candidate_run_ids = [str(item) for item in payload.get("candidate_run_ids", [])]
+        if not baseline_run_id or not candidate_run_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=_api_error(
+                    "evidence.package_missing_field",
+                    "baseline_run_id and candidate_run_ids are required.",
+                    {},
+                ),
+            )
+        try:
+            return EvidenceHarness(active_db_path).review_package_for_runs(
+                baseline_run_id,
+                candidate_run_ids,
+            ).model_dump(mode="json")
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=_api_error("evidence.run_not_found", str(exc), {}),
+            ) from None
+
+    @app.post("/api/evidence/review-packages/validate")
+    def evidence_review_package_validate(
+        payload: dict[str, Any],
+        _auth: None = Depends(require_auth),
+    ) -> dict[str, Any]:
+        try:
+            package = EvidenceReviewPackage.model_validate(payload)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=_api_error("evidence.package_invalid", str(exc), {}),
+            ) from None
+        return EvidenceHarness(active_db_path).validate_review_package(package).model_dump(mode="json")
+
+    @app.post("/api/evidence/review-packages/submit")
+    def evidence_review_package_submit(
+        payload: dict[str, Any],
+        _auth: None = Depends(require_auth),
+    ) -> dict[str, Any]:
+        reason = str(payload.get("reason", "")).strip()
+        package_payload = payload.get("package")
+        if not reason or not isinstance(package_payload, dict):
+            raise HTTPException(
+                status_code=400,
+                detail=_api_error(
+                    "evidence.review_submit_missing_field",
+                    "package and reason are required.",
+                    {},
+                ),
+            )
+        try:
+            package = EvidenceReviewPackage.model_validate(package_payload)
+            return EvidenceHarness(active_db_path).submit_review_package(package, reason).model_dump(mode="json")
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=_api_error("evidence.review_submit_failed", str(exc), {}),
+            ) from None
+
+    @app.get("/api/evidence/review-decisions")
+    def evidence_review_decisions(
+        scenario_id: str | None = None,
+        status: str | None = None,
+        _auth: None = Depends(require_auth),
+    ) -> list[dict[str, Any]]:
+        try:
+            return [
+                decision.model_dump(mode="json")
+                for decision in EvidenceHarness(active_db_path).list_review_package_decisions(
+                    scenario_id=scenario_id,
+                    status=status,
+                )
+            ]
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=_api_error("evidence.review_decision_invalid_filter", str(exc), {"status": status}),
+            ) from None
+
+    @app.get("/api/evidence/review-packages/{package_id}/decision")
+    def evidence_review_package_decision(
+        package_id: str,
+        _auth: None = Depends(require_auth),
+    ) -> dict[str, Any]:
+        try:
+            return EvidenceHarness(active_db_path).review_package_decision_for_package(package_id).model_dump(mode="json")
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=_api_error(
+                    "evidence.review_package_decision_not_found",
+                    str(exc),
+                    {"package_id": package_id},
+                ),
+            ) from None
+
+    @app.post("/api/evidence/review-decisions/{decision_id}/approve")
+    def evidence_review_decision_approve(
+        decision_id: str,
+        payload: dict[str, Any] | None = None,
+        _auth: None = Depends(require_auth),
+    ) -> dict[str, Any]:
+        comment = str((payload or {}).get("comment", "")).strip()
+        if not comment:
+            raise HTTPException(
+                status_code=400,
+                detail=_api_error("validation.operator_comment_required", "Operator comment is required.", {}),
+            )
+        try:
+            decision = EvidenceHarness(active_db_path).approve_review_package(decision_id, comment)
+        except ValueError as exc:
+            if "already" in str(exc):
+                raise HTTPException(
+                    status_code=400,
+                    detail=_api_error(
+                        "evidence.review_decision_state_conflict",
+                        str(exc),
+                        {"decision_id": decision_id},
+                    ),
+                ) from None
+            raise HTTPException(
+                status_code=404,
+                detail=_api_error("evidence.review_decision_not_found", str(exc), {"decision_id": decision_id}),
+            ) from None
+        _record_decision(
+            db_path=active_db_path,
+            source_id=decision_id,
+            source_type="evidence_review_package",
+            kind=DecisionKind.APPROVE,
+            scenario_id=decision.scenario_id,
+            action="approve_review_package",
+            comment=comment,
+            after=decision.model_dump(mode="json"),
+        )
+        return decision.model_dump(mode="json")
+
+    @app.post("/api/evidence/review-decisions/{decision_id}/reject")
+    def evidence_review_decision_reject(
+        decision_id: str,
+        payload: dict[str, Any] | None = None,
+        _auth: None = Depends(require_auth),
+    ) -> dict[str, Any]:
+        comment = str((payload or {}).get("comment", "")).strip()
+        if not comment:
+            raise HTTPException(
+                status_code=400,
+                detail=_api_error("validation.operator_comment_required", "Operator comment is required.", {}),
+            )
+        try:
+            decision = EvidenceHarness(active_db_path).reject_review_package(decision_id, comment)
+        except ValueError as exc:
+            if "already" in str(exc):
+                raise HTTPException(
+                    status_code=400,
+                    detail=_api_error(
+                        "evidence.review_decision_state_conflict",
+                        str(exc),
+                        {"decision_id": decision_id},
+                    ),
+                ) from None
+            raise HTTPException(
+                status_code=404,
+                detail=_api_error("evidence.review_decision_not_found", str(exc), {"decision_id": decision_id}),
+            ) from None
+        _record_decision(
+            db_path=active_db_path,
+            source_id=decision_id,
+            source_type="evidence_review_package",
+            kind=DecisionKind.REJECT,
+            scenario_id=decision.scenario_id,
+            action="reject_review_package",
+            comment=comment,
+            after=decision.model_dump(mode="json"),
+        )
+        return decision.model_dump(mode="json")
 
     @app.post("/api/evidence/import/quant-csv")
     def evidence_import_quant_csv(payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict[str, Any]:
@@ -945,13 +1130,35 @@ def create_app(
 
     @app.post("/api/user-profile")
     def api_save_user_profile(payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        content = str(payload.get("content", "")).strip()
+        reason = str(payload.get("reason", "")).strip()
+        if not content or not reason:
+            raise HTTPException(
+                status_code=400,
+                detail=_api_error(
+                    "user_profile.missing_field",
+                    "content and reason are required.",
+                    {},
+                ),
+            )
         profile = UserProfileStore(_profile_dir(active_db_path), active_db_path)
         version = profile.save_formal_profile(
-            content=str(payload["content"]),
+            content=content,
             actor="human",
-            reason=str(payload["reason"]),
+            reason=reason,
         )
         return version.model_dump(mode="json")
+
+    @app.post("/api/user-profile/suggest")
+    def api_suggest_user_profile(payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        scenario_id = payload.get("scenario_id")
+        scenario_filter = str(scenario_id) if scenario_id else None
+        decisions = DecisionLogStore(active_db_path).list(scenario_id=scenario_filter)
+        comments = [record.comment for record in decisions if record.comment.strip()]
+        profile = UserProfileStore(_profile_dir(active_db_path), active_db_path)
+        content = _suggested_profile_notes(scenario_filter, comments)
+        notes = profile.save_suggested_notes(content, actor="hermes")
+        return notes.model_dump(mode="json")
 
     @app.get("/api/reports/latest")
     def api_latest_report(
@@ -1195,6 +1402,13 @@ def _fallback_app(loop_harness: LoopHarness, auth: BearerTokenAuth) -> FallbackA
             {"method": "GET", "path": "/api/evidence/workflows/{workflow_id}/graph"},
             {"method": "GET", "path": "/api/evidence/workflows/{workflow_id}/charts/optimization"},
             {"method": "POST", "path": "/api/evidence/charts/optimization"},
+            {"method": "POST", "path": "/api/evidence/review-packages"},
+            {"method": "POST", "path": "/api/evidence/review-packages/validate"},
+            {"method": "POST", "path": "/api/evidence/review-packages/submit"},
+            {"method": "GET", "path": "/api/evidence/review-packages/{package_id}/decision"},
+            {"method": "GET", "path": "/api/evidence/review-decisions"},
+            {"method": "POST", "path": "/api/evidence/review-decisions/{decision_id}/approve"},
+            {"method": "POST", "path": "/api/evidence/review-decisions/{decision_id}/reject"},
             {"method": "POST", "path": "/api/evidence/import/quant-csv"},
             {"method": "POST", "path": "/api/evidence/workflows/{workflow_id}/baseline"},
             {"method": "GET", "path": "/api/evidence/workflows/{workflow_id}/baseline"},
@@ -1222,6 +1436,7 @@ def _fallback_app(loop_harness: LoopHarness, auth: BearerTokenAuth) -> FallbackA
             {"method": "GET", "path": "/api/agent-configs"},
             {"method": "GET", "path": "/api/external-agents"},
             {"method": "GET", "path": "/api/user-profile"},
+            {"method": "POST", "path": "/api/user-profile/suggest"},
             {"method": "GET", "path": "/api/reports/latest"},
             {"method": "GET", "path": "/api/shadows"},
             {"method": "GET", "path": "/api/autonomy/actions"},
@@ -1247,6 +1462,35 @@ def _profile_dir(db_path: Path) -> Path:
     if configured:
         return Path(configured)
     return db_path.parent / "user"
+
+
+def _suggested_profile_notes(scenario_id: str | None, comments: list[str]) -> str:
+    """Build Hermes-style draft notes from decision comments."""
+
+    scope = scenario_id or "all scenarios"
+    lines = [
+        "# Suggested Profile Notes",
+        "",
+        "These notes are Hermes draft material. They are not formal constraints until the human moves selected wording into USER_PROFILE.md.",
+        "",
+        f"Scope: {scope}",
+        "",
+        "## Decision Evidence",
+    ]
+    if comments:
+        lines.extend(f"- {comment}" for comment in comments[:20])
+    else:
+        lines.append("- No decision comments found yet.")
+    lines.extend(
+        [
+            "",
+            "## Suggested Interpretation",
+            "Review the evidence above and write the final preference manually if it matches your actual methodology.",
+            "",
+            "Status: pending human review",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def _scenario_registry(db_path: Path) -> ScenarioRegistry:
@@ -1304,6 +1548,10 @@ def _approval_detail(approval_id: str, db_path: Path) -> dict[str, Any] | None:
     parameter_suggestion = ParameterSuggestionStore(db_path).get(approval_id)
     if parameter_suggestion is not None:
         return parameter_suggestion.model_dump(mode="json")
+
+    review_decision = ReviewPackageDecisionStore(db_path).get(approval_id)
+    if review_decision is not None:
+        return review_decision.model_dump(mode="json")
 
     return None
 

@@ -37,6 +37,8 @@ export function ApprovalDetailPage() {
   const patch = item?.detail?.patch as
     | { slot?: string; operation?: string; before?: unknown; after?: unknown }
     | undefined;
+  const reviewDecision =
+    item?.item_type === "evidence_review_package" ? (item.detail as Record<string, unknown> | undefined) : undefined;
   const commentRequired = comment.trim().length === 0;
 
   return (
@@ -70,6 +72,26 @@ export function ApprovalDetailPage() {
                 <div className="text-xs font-medium uppercase text-muted">Created</div>
                 <p className="mt-1 text-ink">{formatDate(item.created_at)}</p>
               </div>
+              {reviewDecision ? (
+                <div className="grid gap-3 lg:grid-cols-3">
+                  <div className="rounded-md border border-border bg-panel p-3">
+                    <div className="text-xs font-medium uppercase text-muted">Baseline</div>
+                    <p className="mt-1 break-all text-ink">{String(reviewDecision.baseline_run_id ?? "")}</p>
+                  </div>
+                  <div className="rounded-md border border-border bg-panel p-3">
+                    <div className="text-xs font-medium uppercase text-muted">Candidates</div>
+                    <p className="mt-1 break-all text-ink">
+                      {Array.isArray(reviewDecision.candidate_run_ids)
+                        ? reviewDecision.candidate_run_ids.join(", ")
+                        : ""}
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-border bg-panel p-3">
+                    <div className="text-xs font-medium uppercase text-muted">Package</div>
+                    <p className="mt-1 break-all text-ink">{String(reviewDecision.package_id ?? "")}</p>
+                  </div>
+                </div>
+              ) : null}
               {patch ? (
                 <div className="grid gap-3 lg:grid-cols-2">
                   <div className="rounded-md border border-border bg-slate-50 p-3">

@@ -217,6 +217,8 @@ export type NodeEvidenceDetail = {
   error?: string | null;
   black_box: boolean;
   optimizable: boolean;
+  artifact_refs: Array<Record<string, unknown>>;
+  gaps: EvidenceGap[];
   metadata: Record<string, unknown>;
 };
 
@@ -331,6 +333,48 @@ export type EvidenceProposal = {
   reason: string;
   expected_metric: string;
   status: string;
+  metadata: Record<string, unknown>;
+};
+
+export type EvidenceReviewPackage = {
+  package_id: string;
+  workflow_id: string;
+  scenario_id: string;
+  baseline_run_id: string;
+  candidate_run_ids: string[];
+  graph: WorkflowGraphPayload;
+  chart: OptimizationChartPayload;
+  comparison_reports: EvidenceReport[];
+  gap_summary: string;
+  recommended_action: string;
+  markdown: string;
+  metadata: Record<string, unknown>;
+};
+
+export type ReplayValidationResult = {
+  package_id: string;
+  valid: boolean;
+  missing_run_ids: string[];
+  drifted_run_ids: string[];
+  summary: string;
+};
+
+export type ReviewDecisionStatus = "pending" | "approved" | "rejected" | string;
+
+export type ReviewPackageDecision = {
+  decision_id: string;
+  package_id: string;
+  scenario_id: string;
+  workflow_id: string;
+  baseline_run_id: string;
+  candidate_run_ids: string[];
+  recommended_action: string;
+  status: ReviewDecisionStatus;
+  reason: string;
+  approval_required: boolean;
+  comment?: string | null;
+  created_at: string;
+  decided_at?: string | null;
   metadata: Record<string, unknown>;
 };
 
@@ -500,4 +544,12 @@ export type UserProfilePayload = {
   formal_profile: string;
   suggested_notes: string;
   versions: Array<{ id: string; actor: string; reason: string; created_at: string }>;
+};
+
+export type SuggestedProfileNotes = {
+  id: string;
+  actor: string;
+  content: string;
+  created_at: string;
+  metadata: Record<string, unknown>;
 };

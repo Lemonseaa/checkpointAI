@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { useState } from "react";
 import {
+  createReviewPackage,
   getDecisionMemory,
   getEvidenceBaseline,
   getEvidenceGapReport,
@@ -10,13 +11,15 @@ import {
   getOptimizationChart,
   getOptimizationGoal,
   getRunGraph,
-  setEvidenceBaseline
+  setEvidenceBaseline,
+  submitReviewPackage
 } from "../../api/client";
 import { Card } from "../../components/Card";
 import { MetricGrid } from "../../components/MetricGrid";
 import { PageHeader } from "../../components/PageHeader";
 import { StatusBadge } from "../../components/StatusBadge";
 import { EvidenceQualityPanel } from "./EvidenceQualityPanel";
+import { EvidenceReviewPackage } from "./EvidenceReviewPackage";
 import { NodeInspector } from "./NodeInspector";
 import { OptimizationCharts } from "./OptimizationCharts";
 import { WorkflowMap } from "./WorkflowMap";
@@ -46,6 +49,22 @@ export function EvidenceRunDetailPage() {
     }
   });
   const isActiveBaseline = baseline.data?.baseline_run_id === runId;
+  const canCreateReviewPackage = Boolean(
+    baseline.data?.baseline_run_id && runId && baseline.data.baseline_run_id !== runId
+  );
+  const reviewPackage = useMutation({
+    mutationFn: () => createReviewPackage(baseline.data?.baseline_run_id ?? "", [runId])
+  });
+  const submitPackage = useMutation({
+    mutationFn: () =>
+      submitReviewPackage(
+        reviewPackage.data!,
+        "Candidate package created from baseline/candidate evidence for human review."
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["approvals"] });
+    }
+  });
   const activeNodeId =
     stored && stored.visualization.nodes.some((node) => node.id === selectedNodeId)
       ? selectedNodeId
@@ -147,6 +166,25 @@ export function EvidenceRunDetailPage() {
           <div className="mt-5">
             <Card title="Optimization Charts">
               <OptimizationCharts chart={optimizationChart.data} highlightedRunId={runId} />
+            </Card>
+          </div>
+
+          <div className="mt-5">
+            <Card title="Review Package">
+              <EvidenceReviewPackage
+                packageData={reviewPackage.data}
+                decision={submitPackage.data}
+                disabled={!canCreateReviewPackage}
+                disabledReason={
+                  isActiveBaseline
+                    ? "This run is the active baseline. Open a candidate run to create a review package."
+                    : "Set an active baseline before packaging a candidate run."
+                }
+                isLoading={reviewPackage.isPending}
+                isSubmitting={submitPackage.isPending}
+                onCreate={() => reviewPackage.mutate()}
+                onSubmit={() => submitPackage.mutate()}
+              />
             </Card>
           </div>
 

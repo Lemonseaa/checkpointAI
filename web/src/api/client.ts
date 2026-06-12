@@ -13,6 +13,7 @@ import type {
   EvidenceBaseline,
   EvidenceProposal,
   EvidenceGapReport,
+  EvidenceReviewPackage,
   ExternalAgentConnection,
   HealthReport,
   LearningObservation,
@@ -23,11 +24,14 @@ import type {
   ProcessAutonomyActionResult,
   ReportResponse,
   RestoreResult,
+  ReplayValidationResult,
+  ReviewPackageDecision,
   RunDetail,
   RunSummary,
   SafetyFinding,
   Scenario,
   ShadowResult,
+  SuggestedProfileNotes,
   TriggerShadowPayload,
   TriggerRunPayload,
   TriggerRunResult,
@@ -170,6 +174,48 @@ export async function buildOptimizationChart(baselineRunId: string, candidateRun
   const response = await api.post<OptimizationChartPayload>("/api/evidence/charts/optimization", {
     baseline_run_id: baselineRunId,
     candidate_run_ids: candidateRunIds
+  });
+  return response.data;
+}
+
+export async function createReviewPackage(baselineRunId: string, candidateRunIds: string[]) {
+  const response = await api.post<EvidenceReviewPackage>("/api/evidence/review-packages", {
+    baseline_run_id: baselineRunId,
+    candidate_run_ids: candidateRunIds
+  });
+  return response.data;
+}
+
+export async function validateReviewPackage(packagePayload: EvidenceReviewPackage) {
+  const response = await api.post<ReplayValidationResult>("/api/evidence/review-packages/validate", packagePayload);
+  return response.data;
+}
+
+export async function submitReviewPackage(packagePayload: EvidenceReviewPackage, reason: string) {
+  const response = await api.post<ReviewPackageDecision>("/api/evidence/review-packages/submit", {
+    package: packagePayload,
+    reason
+  });
+  return response.data;
+}
+
+export async function listReviewDecisions(scenarioId?: string, status?: string) {
+  const response = await api.get<ReviewPackageDecision[]>("/api/evidence/review-decisions", {
+    params: { scenario_id: scenarioId, status }
+  });
+  return response.data;
+}
+
+export async function approveReviewDecision(decisionId: string, comment: string) {
+  const response = await api.post<ReviewPackageDecision>(`/api/evidence/review-decisions/${decisionId}/approve`, {
+    comment
+  });
+  return response.data;
+}
+
+export async function rejectReviewDecision(decisionId: string, comment: string) {
+  const response = await api.post<ReviewPackageDecision>(`/api/evidence/review-decisions/${decisionId}/reject`, {
+    comment
   });
   return response.data;
 }
@@ -363,5 +409,12 @@ export async function listExternalAgents() {
 
 export async function getUserProfile() {
   const response = await api.get<UserProfilePayload>("/api/user-profile");
+  return response.data;
+}
+
+export async function suggestUserProfile(scenarioId?: string) {
+  const response = await api.post<SuggestedProfileNotes>("/api/user-profile/suggest", {
+    scenario_id: scenarioId
+  });
   return response.data;
 }

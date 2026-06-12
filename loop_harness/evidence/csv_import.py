@@ -8,6 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from loop_harness.evidence.quant_contracts import QuantBacktestOutput
+
 
 class QuantCSVImportResult(BaseModel):
     """Result returned after importing quant backtest CSV rows."""
@@ -71,11 +73,26 @@ class QuantBacktestCSVImporter:
         fast_window = self._int(row, "fast_window")
         slow_window = self._int(row, "slow_window")
         trade_count = self._int(row, "trade_count")
+        sample_count = self._int(row, "sample_count") if row.get("sample_count") else 504
+        capital = self._float(row, "capital") if row.get("capital") else None
         total_return = self._float(row, "total_return")
         sharpe = self._float(row, "sharpe")
         max_drawdown = self._float(row, "max_drawdown")
         win_rate = self._float(row, "win_rate")
         turnover = self._float(row, "turnover")
+        quant_output = QuantBacktestOutput(
+            total_return=total_return,
+            annual_return=round(total_return / 2, 6),
+            sharpe=sharpe,
+            max_drawdown=max_drawdown,
+            volatility=self._float(row, "volatility") if row.get("volatility") else 0.0,
+            win_rate=win_rate,
+            turnover=turnover,
+            trade_count=trade_count,
+            benchmark_return=self._float(row, "benchmark_return") if row.get("benchmark_return") else 0.0,
+            excess_return=self._float(row, "excess_return") if row.get("excess_return") else total_return,
+            sample_count=sample_count,
+        )
         return {
             "workflow_id": workflow_id,
             "run_id": run_id,
@@ -93,7 +110,7 @@ class QuantBacktestCSVImporter:
                 {"source": "risk", "target": "report"},
             ],
             "trace": [
-                {"node_id": "load_data", "status": "succeeded", "duration_ms": 20, "metrics": {"sample_count": 504}},
+                {"node_id": "load_data", "status": "succeeded", "duration_ms": 20, "metrics": {"sample_count": sample_count}},
                 {
                     "node_id": "strategy",
                     "status": "succeeded",
@@ -110,16 +127,16 @@ class QuantBacktestCSVImporter:
                 {"node_id": "report", "status": "succeeded", "duration_ms": 10},
             ],
             "metrics": {
-                "total_return": total_return,
-                "annual_return": round(total_return / 2, 6),
-                "benchmark_return": 0.0,
-                "excess_return": total_return,
-                "sharpe": sharpe,
-                "max_drawdown": max_drawdown,
-                "win_rate": win_rate,
-                "turnover": turnover,
-                "trade_count": float(trade_count),
-                "sample_count": 504.0,
+                "total_return": quant_output.total_return,
+                "annual_return": quant_output.annual_return,
+                "benchmark_return": quant_output.benchmark_return,
+                "excess_return": quant_output.excess_return,
+                "sharpe": quant_output.sharpe,
+                "max_drawdown": quant_output.max_drawdown,
+                "win_rate": quant_output.win_rate,
+                "turnover": quant_output.turnover,
+                "trade_count": float(quant_output.trade_count),
+                "sample_count": float(quant_output.sample_count),
                 "latency_ms": 140.0,
             },
             "metric_schema": self._metric_schema(),
@@ -131,8 +148,10 @@ class QuantBacktestCSVImporter:
             "artifacts": [],
             "metadata": {
                 "data_source": "csv_import",
+                "contract": "quant_evidence_v1",
                 "importer": "QuantBacktestCSVImporter",
                 "source_row": dict(row),
+                "capital": capital,
             },
         }
 

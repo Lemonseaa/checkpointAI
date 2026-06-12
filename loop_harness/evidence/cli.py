@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from typing import Any
 
 from loop_harness.evidence.quant_drill import QuantDrillRunner
+from loop_harness.evidence.review_package import EvidenceReviewPackage
 from loop_harness.harness import EvidenceHarness
 
 
@@ -33,6 +35,29 @@ def register_evidence_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     chart_parser.add_argument("--workflow", dest="workflow_id")
     chart_parser.add_argument("--baseline", dest="baseline_run_id")
     chart_parser.add_argument("--candidate", dest="candidate_run_ids", action="append", default=[])
+
+    package_parser = evidence_subparsers.add_parser("package")
+    package_parser.add_argument("--baseline", required=True, dest="baseline_run_id")
+    package_parser.add_argument("--candidate", dest="candidate_run_ids", action="append", default=[])
+    package_parser.add_argument("--markdown", action="store_true")
+
+    replay_package_parser = evidence_subparsers.add_parser("replay-package")
+    replay_package_parser.add_argument("--path", required=True)
+
+    package_submit_parser = evidence_subparsers.add_parser("package-submit")
+    package_submit_parser.add_argument("--path", required=True)
+    package_submit_parser.add_argument("--reason", required=True)
+
+    package_decide_parser = evidence_subparsers.add_parser("package-decide")
+    package_decide_parser.add_argument("--id", required=True, dest="decision_id")
+    decision_group = package_decide_parser.add_mutually_exclusive_group(required=True)
+    decision_group.add_argument("--approve", action="store_true")
+    decision_group.add_argument("--reject", action="store_true")
+    package_decide_parser.add_argument("--comment", required=True)
+
+    package_decisions_parser = evidence_subparsers.add_parser("package-decisions")
+    package_decisions_parser.add_argument("--scenario", dest="scenario_id")
+    package_decisions_parser.add_argument("--status")
 
     import_quant_csv_parser = evidence_subparsers.add_parser("import-quant-csv")
     import_quant_csv_parser.add_argument("--path", required=True)
@@ -134,6 +159,62 @@ def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
         _print_json(chart.model_dump(mode="json"))
         return 0
 
+    if args.evidence_command == "package":
+        try:
+            package = harness.review_package_for_runs(args.baseline_run_id, args.candidate_run_ids)
+        except ValueError as exc:
+            print(str(exc))
+            return 1
+        if args.markdown:
+            print(package.markdown)
+        else:
+            _print_json(package.model_dump(mode="json"))
+        return 0
+
+    if args.evidence_command == "replay-package":
+        try:
+            package = EvidenceReviewPackage.model_validate_json(Path(args.path).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            print(str(exc))
+            return 1
+        validation_result = harness.validate_review_package(package)
+        _print_json(validation_result.model_dump(mode="json"))
+        return 0
+
+    if args.evidence_command == "package-submit":
+        try:
+            package = EvidenceReviewPackage.model_validate_json(Path(args.path).read_text(encoding="utf-8"))
+            decision = harness.submit_review_package(package, args.reason)
+        except (OSError, ValueError) as exc:
+            print(str(exc))
+            return 1
+        _print_json(decision.model_dump(mode="json"))
+        return 0
+
+    if args.evidence_command == "package-decide":
+        try:
+            if args.approve:
+                decision = harness.approve_review_package(args.decision_id, args.comment)
+            else:
+                decision = harness.reject_review_package(args.decision_id, args.comment)
+        except ValueError as exc:
+            print(str(exc))
+            return 1
+        _print_json(decision.model_dump(mode="json"))
+        return 0
+
+    if args.evidence_command == "package-decisions":
+        try:
+            decisions = harness.list_review_package_decisions(
+                scenario_id=args.scenario_id,
+                status=args.status,
+            )
+        except ValueError as exc:
+            print(str(exc))
+            return 1
+        _print_json([decision.model_dump(mode="json") for decision in decisions])
+        return 0
+
     if args.evidence_command == "import-quant-csv":
         try:
             import_result = harness.ingest_quant_csv(
@@ -221,5 +302,5 @@ def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
     return 1
 
 
-def _print_json(payload: dict[str, Any]) -> None:
+def _print_json(payload: Any) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2))

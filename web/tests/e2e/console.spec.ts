@@ -258,6 +258,57 @@ const optimizationChart = {
   summary: "Baseline baseline-run-001 compared with 2 candidates; best=candidate-run-002; guardrail_violations=1."
 };
 
+const reviewPackage = {
+  package_id: "review_quant_demo_baseline_run_001_1",
+  workflow_id: "quant-demo",
+  scenario_id: "quant",
+  baseline_run_id: "baseline-run-001",
+  candidate_run_ids: ["candidate-run-002"],
+  graph: graphForRun("candidate-run-002"),
+  chart: optimizationChart,
+  comparison_reports: [comparisonReport],
+  gap_summary: "1 evidence gaps across candidates.",
+  recommended_action: "review_for_paper",
+  markdown: [
+    "# Evidence Review Package",
+    "",
+    "Package: review_quant_demo_baseline_run_001_1",
+    "Baseline: baseline-run-001",
+    "Candidates: candidate-run-002",
+    "",
+    "## Guardrail Summary",
+    "1 candidates violated guardrails: weak-run-003.",
+    "",
+    "## Next Action",
+    "review_for_paper"
+  ].join("\n"),
+  metadata: {
+    best_candidate_run_id: "candidate-run-002",
+    candidate_count: 1,
+    comparison_count: 1
+  }
+};
+
+const reviewDecision = {
+  decision_id: "review-decision-001",
+  package_id: reviewPackage.package_id,
+  scenario_id: "quant",
+  workflow_id: "quant-demo",
+  baseline_run_id: "baseline-run-001",
+  candidate_run_ids: ["candidate-run-002"],
+  recommended_action: "review_for_paper",
+  status: "pending",
+  reason: "Candidate package created from baseline/candidate evidence for human review.",
+  approval_required: true,
+  comment: null,
+  created_at: "2026-06-11T00:00:00Z",
+  decided_at: null,
+  metadata: {
+    package_markdown: reviewPackage.markdown,
+    guardrail_summary: reviewPackage.chart.guardrail_summary
+  }
+};
+
 let activeBaselineRunId = "";
 
 test("renders the control console shell", async ({ page }) => {
@@ -271,6 +322,7 @@ test("renders the control console shell", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Workflows" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Runs" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Shadows" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Charts" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Learning" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Autonomy" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Reports" })).toBeVisible();
@@ -316,6 +368,61 @@ test("opens the evidence console page", async ({ page }) => {
   await page.route("**/api/evidence/workflows/*/charts/optimization", async (route) => {
     await route.fulfill({ json: optimizationChart });
   });
+  await page.route("**/api/evidence/review-packages/validate", async (route) => {
+    await route.fulfill({
+      json: {
+        package_id: reviewPackage.package_id,
+        valid: true,
+        missing_run_ids: [],
+        drifted_run_ids: [],
+        summary: "Review package is replay-valid."
+      }
+    });
+  });
+  await page.route("**/api/evidence/review-packages", async (route) => {
+    await route.fulfill({ json: reviewPackage });
+  });
+  await page.route("**/api/evidence/review-packages/submit", async (route) => {
+    await route.fulfill({ json: reviewDecision });
+  });
+  await page.route("**/api/approvals", async (route) => {
+    await route.fulfill({
+      json: [
+        {
+          id: reviewDecision.decision_id,
+          scenario_id: "quant",
+          item_type: "evidence_review_package",
+          source_id: reviewDecision.decision_id,
+          title: `Evidence review package: ${reviewDecision.package_id}`,
+          summary: reviewDecision.reason,
+          status: "pending",
+          recommended_action: "review_for_paper",
+          created_at: reviewDecision.created_at
+        }
+      ]
+    });
+  });
+  await page.route("**/api/approvals/**", async (route) => {
+    const url = route.request().url();
+    if (route.request().method() === "POST" && url.endsWith("/approve")) {
+      await route.fulfill({ json: { id: reviewDecision.decision_id, updated: true } });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        id: reviewDecision.decision_id,
+        scenario_id: "quant",
+        item_type: "evidence_review_package",
+        source_id: reviewDecision.decision_id,
+        title: `Evidence review package: ${reviewDecision.package_id}`,
+        summary: reviewDecision.reason,
+        status: "pending",
+        recommended_action: "review_for_paper",
+        created_at: reviewDecision.created_at,
+        detail: reviewDecision
+      }
+    });
+  });
   await page.route("**/api/evidence/runs/*/nodes/*", async (route) => {
     const url = route.request().url();
     const nodeId = url.split("/").pop() ?? "";
@@ -335,6 +442,22 @@ test("opens the evidence console page", async ({ page }) => {
         error: null,
         black_box: nodeId === "risk",
         optimizable: nodeId === "agent",
+        artifact_refs:
+          nodeId === "agent"
+            ? [{ type: "json", path: "runs/candidate-signal.json", metadata: { node_id: "agent" } }]
+            : [{ type: "log", path: "runs/risk-check.log", metadata: { node_id: "risk" } }],
+        gaps:
+          nodeId === "risk"
+            ? [
+                {
+                  code: "node.black_box",
+                  severity: "warning",
+                  message: "Node risk is not fully observable.",
+                  node_id: "risk",
+                  details: {}
+                }
+              ]
+            : [],
         metadata: {}
       }
     });
@@ -360,6 +483,27 @@ test("opens the evidence console page", async ({ page }) => {
         approved_patterns: ["prompt", "sharpe"],
         rejected_patterns: [],
         summary: "Scenario quant: 1 approvals, 0 rejections. Use this as decision context, not automatic authority."
+      }
+    });
+  });
+  await page.route("**/api/user-profile**", async (route) => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({
+        json: {
+          id: "suggested-notes-001",
+          actor: "hermes",
+          content: "# Suggested Profile Notes\n\nHermes draft: user may prefer lower drawdown.\n\nStatus: pending human review",
+          created_at: "2026-06-12T00:00:00Z",
+          metadata: {}
+        }
+      });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        formal_profile: "# User Profile\n\nDo not execute live trading without explicit human approval.",
+        suggested_notes: "# Suggested Profile Notes\n\nHermes draft: user may prefer lower drawdown.",
+        versions: []
       }
     });
   });
@@ -438,7 +582,7 @@ test("opens the evidence console page", async ({ page }) => {
 
   await page.goto("/");
 
-  await page.getByRole("link", { name: "Evidence" }).click();
+  await page.getByRole("link", { name: "Evidence", exact: true }).click();
 
   await expect(page).toHaveURL(/\/evidence$/);
   await expect(page.getByRole("heading", { name: "Evidence Runs" })).toBeVisible();
@@ -458,6 +602,27 @@ test("opens the evidence console page", async ({ page }) => {
 
   await page.getByRole("link", { name: "Back to evidence" }).click();
   await expect(page.getByText("Active baseline").first()).toBeVisible();
+
+  await page.getByRole("link", { name: "Open candidat…" }).click();
+  await expect(page).toHaveURL(/\/evidence\/runs\/candidate-run-002$/);
+  await page.getByRole("button", { name: "Create review package" }).click();
+  await expect(page.getByText("review_quant_demo_baseline_run_001_1").first()).toBeVisible();
+  await expect(page.getByText("review_for_paper").first()).toBeVisible();
+  await expect(page.getByText("Evidence Review Package")).toBeVisible();
+  await page.getByRole("button", { name: "Submit for approval" }).click();
+  await expect(page.getByText("Decision review-decision-001 is pending.")).toBeVisible();
+  await page.getByRole("link", { name: "Approvals" }).click();
+  await expect(page.getByRole("heading", { name: "Approval Inbox" })).toBeVisible();
+  await page.getByRole("link", { name: "Evidence review package: review_quant_demo_baseline_run_001_1" }).click();
+  await expect(page.getByRole("heading", { name: "Approval Detail" })).toBeVisible();
+  await expect(page.getByText("baseline-run-001").first()).toBeVisible();
+  await expect(page.getByText("candidate-run-002").first()).toBeVisible();
+  await page.getByPlaceholder("Decision note").fill("Approved for paper review.");
+  await page.getByRole("button", { name: "Approve" }).click();
+  await expect(page).toHaveURL(/\/approvals$/);
+  await page.getByRole("link", { name: "Evidence", exact: true }).click();
+  await expect(page).toHaveURL(/\/evidence$/);
+
   await page.getByRole("button", { name: "candidat…" }).click();
 
   await page.getByRole("button", { name: "candidat…" }).click();
@@ -469,6 +634,9 @@ test("opens the evidence console page", async ({ page }) => {
   await expect(page.getByText("Metric sources")).toBeVisible();
   await expect(page.getByText("Optimization Charts")).toBeVisible();
   await expect(page.getByText("Optimization impact chart")).toBeVisible();
+  await expect(page.getByText("Baseline vs best candidate")).toBeVisible();
+  await expect(page.getByText("Sharpe uplift")).toBeVisible();
+  await expect(page.getByText("Drawdown change")).toBeVisible();
   await expect(page.getByText("candidate-run-002").first()).toBeVisible();
   await expect(page.getByText("weak-run-003").first()).toBeVisible();
   await expect(page.getByText("1 candidates violated guardrails: weak-run-003.").first()).toBeVisible();
@@ -490,21 +658,28 @@ test("opens the evidence console page", async ({ page }) => {
   await expect(nodeEvidence.getByRole("heading", { name: "Node Evidence" })).toBeVisible();
   await expect(nodeEvidence.getByText("Node id")).toBeVisible();
   await expect(nodeEvidence.getByText("agent", { exact: true }).first()).toBeVisible();
-  await expect(nodeEvidence.getByText("Type")).toBeVisible();
+  await expect(nodeEvidence.getByText("Type", { exact: true }).first()).toBeVisible();
   await expect(nodeEvidence.getByText("110 ms")).toBeVisible();
   await expect(nodeEvidence.getByText("$0.150")).toBeVisible();
   await expect(nodeEvidence.getByText("Metric captured")).toBeVisible();
   await expect(nodeEvidence.getByText("Optimizable")).toBeVisible();
   await expect(nodeEvidence.getByText("candidate signal")).toBeVisible();
+  await expect(nodeEvidence.getByText("Artifacts")).toBeVisible();
+  await expect(nodeEvidence.getByText("runs/candidate-signal.json")).toBeVisible();
 
   await page.getByRole("button", { name: "Risk check" }).click();
   await expect(nodeEvidence.getByText("Black-box node")).toBeVisible();
+  await expect(nodeEvidence.getByText("Evidence gaps")).toBeVisible();
+  await expect(nodeEvidence.getByText("node.black_box").first()).toBeVisible();
+  await expect(nodeEvidence.getByText("runs/risk-check.log")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Evidence Gaps" })).toBeVisible();
-  await expect(page.getByText("Node risk is not fully observable.")).toBeVisible();
+  await expect(page.getByText("Node risk is not fully observable.").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "Optimization Goal" })).toBeVisible();
   await expect(page.getByText("Primary: sharpe")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Decision Memory" })).toBeVisible();
   await expect(page.getByText("Scenario quant: 1 approvals, 0 rejections.")).toBeVisible();
+  await expect(page.getByText("Approved patterns")).toBeVisible();
+  await expect(page.getByText("prompt, sharpe")).toBeVisible();
 
   await page.getByRole("button", { name: "Compare" }).click();
 
@@ -528,4 +703,21 @@ test("opens the evidence console page", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Workflow Maps" })).toBeVisible();
   await expect(page.getByText("Imported workflow structures")).toBeVisible();
   await expect(page.getByRole("heading", { name: "quant-demo" })).toBeVisible();
+
+  await page.getByRole("link", { name: "Charts" }).click();
+  await expect(page).toHaveURL(/\/charts$/);
+  await expect(page.getByRole("heading", { name: "Optimization Charts" })).toBeVisible();
+  await expect(page.getByText("Baseline baseline-run-001 compared with 2 candidates").first()).toBeVisible();
+  await expect(page.getByText("Baseline vs best candidate")).toBeVisible();
+  await expect(page.getByText("weak-run-003").first()).toBeVisible();
+
+  await page.goto("/profile");
+  await expect(page).toHaveURL(/\/profile$/);
+  await expect(page.getByRole("heading", { name: "User Profile" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Formal Profile" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Suggested Notes" })).toBeVisible();
+  await expect(page.getByText("Do not execute live trading without explicit human approval.")).toBeVisible();
+  await expect(page.getByText("Hermes draft: user may prefer lower drawdown.")).toBeVisible();
+  await page.getByRole("button", { name: "Ask Hermes to summarize" }).click();
+  await expect(page.getByText("Hermes draft updated. Review it before changing the formal profile.")).toBeVisible();
 });

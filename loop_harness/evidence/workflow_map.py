@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from loop_harness.evidence.gap import EvidenceGap, build_gap_report
 from loop_harness.evidence.models import (
     ExternalWorkflowRun,
     StoredEvidenceRun,
@@ -51,6 +52,8 @@ class NodeEvidenceDetail(BaseModel):
     error: str | None = None
     black_box: bool = False
     optimizable: bool = False
+    artifact_refs: list[dict[str, Any]] = Field(default_factory=list)
+    gaps: list[EvidenceGap] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -99,6 +102,12 @@ def build_node_detail(stored: StoredEvidenceRun, node_id: str) -> NodeEvidenceDe
     event = _last_trace_event(stored.run.trace, node_id)
     black_box = node_id in stored.visualization.black_box_node_ids
     metadata = dict(node.metadata)
+    artifacts = [
+        artifact.model_dump(mode="json")
+        for artifact in stored.run.artifacts
+        if artifact.metadata.get("node_id") == node_id
+    ]
+    gaps = [gap for gap in build_gap_report(stored).gaps if gap.node_id == node_id]
     return NodeEvidenceDetail(
         workflow_id=stored.run.workflow_id,
         run_id=stored.run.run_id,
@@ -114,6 +123,8 @@ def build_node_detail(stored: StoredEvidenceRun, node_id: str) -> NodeEvidenceDe
         error=event.error if event is not None else None,
         black_box=black_box,
         optimizable=bool(metadata.get("optimizable") or node.type in {"agent", "prompt", "strategy"}),
+        artifact_refs=artifacts,
+        gaps=gaps,
         metadata=metadata,
     )
 

@@ -14,6 +14,7 @@ import { ScenarioListPage } from "../features/scenarios/ScenarioListPage";
 import { ConfigVersionPage } from "../features/config/ConfigVersionPage";
 import { EvidencePage } from "../features/evidence/EvidencePage";
 import { EvidenceRunDetailPage } from "../features/evidence/EvidenceRunDetailPage";
+import { ChartsPage } from "../features/evidence/ChartsPage";
 import { WorkflowListPage } from "../features/evidence/WorkflowListPage";
 import { ExternalAgentPage } from "../features/external-agents/ExternalAgentPage";
 import { LearningPage } from "../features/learning/LearningPage";
@@ -30,6 +31,7 @@ export function App() {
         <Route path="approvals/:id" element={<ApprovalDetailPage />} />
         <Route path="evidence" element={<EvidencePage />} />
         <Route path="evidence/runs/:runId" element={<EvidenceRunDetailPage />} />
+        <Route path="charts" element={<ChartsPage />} />
         <Route path="workflows" element={<WorkflowListPage />} />
         <Route path="runs" element={<RunListPage />} />
         <Route path="runs/new" element={<NewRunPage />} />

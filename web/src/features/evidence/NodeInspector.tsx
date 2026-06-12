@@ -54,6 +54,29 @@ export function NodeInspector({ visualization, detail, nodeId }: NodeInspectorPr
           </div>
         </div>
       ) : null}
+
+      {detail?.gaps?.length ? (
+        <div>
+          <div className="text-xs font-medium uppercase text-muted">Evidence gaps</div>
+          <div className="mt-2 space-y-2">
+            {detail.gaps.map((gap) => (
+              <div key={`${gap.code}-${gap.message}`} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+                <div className="font-medium text-amber-800">{gap.code}</div>
+                <div className="mt-1 text-amber-700">{gap.message}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {detail?.artifact_refs?.length ? (
+        <div>
+          <div className="text-xs font-medium uppercase text-muted">Artifacts</div>
+          <div className="mt-2">
+            <JsonBlock value={detail.artifact_refs} />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

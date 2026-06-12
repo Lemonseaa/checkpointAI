@@ -113,6 +113,37 @@ Hermes 读取并总结
 
 Hermes 可以建议措辞，但不能替人确认偏好。
 
+## Approval Comments As Evidence
+
+审批评论、review package 决策、reject 理由都可以作为偏好证据。
+
+但它们不是正式偏好本身。
+
+允许用途：
+
+```text
+Hermes 总结“你似乎更重视回撤控制”
+系统在 Approval Detail 中展示历史同类决策
+人类根据历史评论手动更新 USER_PROFILE.md
+```
+
+禁止用途：
+
+```text
+根据一次 approve 自动降低风险阈值
+根据一次 reject 自动禁止某类策略
+把评论直接写入 USER_PROFILE.md
+让 Agent 自动改写正式偏好
+```
+
+正确关系：
+
+```text
+approval comments = evidence
+USER_PROFILE.md = policy-like preference source
+human = only writer of formal preference
+```
+
 ## Suggested Notes Format
 
 ```markdown

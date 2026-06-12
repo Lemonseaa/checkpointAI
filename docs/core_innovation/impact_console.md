@@ -34,6 +34,8 @@ GET  /api/evidence/runs/{run_id}/nodes/{node_id}
 POST /api/evidence/compare
 POST /api/evidence/compare/export
 POST /api/evidence/charts/optimization
+POST /api/evidence/review-packages
+POST /api/evidence/review-packages/validate
 POST /api/evidence/import/quant-csv
 ```
 
@@ -44,13 +46,19 @@ They should not become the main workflow visualization path.
 
 ```text
 Dashboard
+Workflows / workflow map
 Evidence run list
 Workflow visualization
 Baseline vs candidate comparison
 Evidence report
 Approval inbox
+Optimization charts
 Rollback / backup entry
 ```
+
+The full UI information architecture is maintained in
+[ui_information_architecture.md](ui_information_architecture.md). This file
+only records the Impact Console's evidence and API boundaries.
 
 ## Baseline Comparison View
 
@@ -136,6 +144,71 @@ no live trading
 ```
 
 The proposal must include baseline id, candidate id, metric deltas, and quality status.
+
+## Review Package Handoff
+
+The review package is the compact artifact for human or Hermes review.
+
+It bundles:
+
+```text
+workflow graph
+optimization chart
+baseline id
+candidate ids
+comparison reports
+evidence gaps
+recommended next action
+Markdown summary
+```
+
+The package is generated from stored evidence. It is not manually edited and it
+does not mutate prompts, strategies, workflows, trading systems, or publishing
+systems.
+
+Before acting on a package, the console or CLI can replay-validate it against
+SQLite:
+
+```text
+POST /api/evidence/review-packages/validate
+loopharness evidence replay-package --path package.json
+```
+
+Replay validation answers whether the referenced runs still exist and whether
+the charted metric keys still match stored evidence. This keeps review grounded
+in reproducible evidence rather than screenshots or copied notes.
+
+## Review Package Decision Flow
+
+Review packages become actionable only after explicit human submission:
+
+```text
+review package generated
+  -> replay validation
+  -> submit for approval
+  -> Approval Inbox
+  -> human approve/reject with comment
+  -> decision log and decision memory evidence
+```
+
+Approval means “this package is accepted as a review decision.” It does not mean
+deployment.
+
+The decision record stores:
+
+```text
+package id
+workflow id
+scenario id
+baseline id
+candidate ids
+recommended action
+human reason
+human approval/rejection comment
+```
+
+These records are useful training and preference evidence. They are not
+permission for automatic policy relaxation or live action.
 
 ## Hard Boundaries
 

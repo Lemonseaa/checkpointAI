@@ -13,12 +13,15 @@ from typing import Any
 from loop_harness.evidence import (
     EvidenceGapReport,
     EvidenceReport,
+    EvidenceReviewPackage,
     EvidenceService,
     EvidenceStore,
     IngestResult,
     NodeEvidenceDetail,
     OptimizationChartPayload,
     QuantCSVImportResult,
+    ReplayValidationResult,
+    ReviewPackageDecision,
     StoredEvidenceRun,
     WorkflowGraphPayload,
     WorkflowMapSummary,
@@ -119,6 +122,49 @@ class EvidenceHarness:
         """Compare a candidate run against a baseline run."""
 
         return self.service.compare(baseline_run_id, candidate_run_id)
+
+    def review_package_for_runs(
+        self,
+        baseline_run_id: str,
+        candidate_run_ids: list[str],
+    ) -> EvidenceReviewPackage:
+        """Build a portable review package for human approval handoff."""
+
+        return self.service.review_package_for_runs(baseline_run_id, candidate_run_ids)
+
+    def validate_review_package(self, package: EvidenceReviewPackage) -> ReplayValidationResult:
+        """Validate a review package against current stored evidence."""
+
+        return self.service.validate_review_package(package)
+
+    def submit_review_package(self, package: EvidenceReviewPackage, reason: str) -> ReviewPackageDecision:
+        """Submit a replay-valid review package for human decision."""
+
+        return self.service.submit_review_package(package, reason)
+
+    def approve_review_package(self, decision_id: str, comment: str) -> ReviewPackageDecision:
+        """Approve a pending review package decision."""
+
+        return self.service.approve_review_package(decision_id, comment)
+
+    def reject_review_package(self, decision_id: str, comment: str) -> ReviewPackageDecision:
+        """Reject a pending review package decision."""
+
+        return self.service.reject_review_package(decision_id, comment)
+
+    def list_review_package_decisions(
+        self,
+        scenario_id: str | None = None,
+        status: str | None = None,
+    ) -> list[ReviewPackageDecision]:
+        """List review package decisions."""
+
+        return self.service.list_review_package_decisions(scenario_id=scenario_id, status=status)
+
+    def review_package_decision_for_package(self, package_id: str) -> ReviewPackageDecision:
+        """Return the latest review decision for one review package."""
+
+        return self.service.review_package_decision_for_package(package_id)
 
     def export_comparison_markdown(self, baseline_run_id: str, candidate_run_id: str) -> str:
         """Export a comparison report as Markdown."""

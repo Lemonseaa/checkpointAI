@@ -125,6 +125,7 @@ class WorkflowGraphQuantNext20Test(unittest.TestCase):
             trade_count=88,
             benchmark_return=0.14,
             excess_return=0.07,
+            sample_count=252,
         )
 
         with tempfile.TemporaryDirectory() as tmp:

@@ -2,7 +2,7 @@
 
 **Evidence-driven control layer for external AI workflows**
 
-[![Tests](https://img.shields.io/badge/tests-264%20passed-brightgreen)](https://github.com/Lemonseaa/loop-harness)
+[![Tests](https://img.shields.io/badge/tests-279%20passed-brightgreen)](https://github.com/Lemonseaa/loop-harness)
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/license-Non--Commercial-red)](LICENSE)
@@ -222,8 +222,11 @@ scripts/business_lines/quant/  Quant business-line scripts.
 - [Blueprint](docs/BLUEPRINT.md): current source of truth.
 - [Strategic Reset Plan](docs/STRATEGIC_RESET_PLAN.md): current execution plan.
 - [Core Innovation](docs/core_innovation/README.md): evidence harness, workflow visualization, metric schema, and human methodology.
+- [Core Innovation Thesis](docs/core_innovation/CORE_INNOVATION.md): what Loop Harness owns and why.
 - [Borrowed Wheels](docs/borrowed_wheels/README.md): external projects, replacement wheels, and adapter compatibility.
+- [Wheel Strategy](docs/borrowed_wheels/WHEEL_STRATEGY.md): what to reuse, borrow, own, or connect.
 - [Business Lines](docs/business_lines/README.md): quant, content, and temporary demo applications.
 - [Legacy Replacement Matrix](docs/borrowed_wheels/legacy_replacement_matrix.md): replacement, rewrite, keep, and isolation decisions for old modules.
 - [System Boundaries](docs/SYSTEM_BOUNDARIES.md): policy and BusinessLine/Scenario boundaries.
+- [Risk Review](docs/RISK_REVIEW.md): risks that would pull the project back into duplicated platform work.
 - [Archive](docs/archive/README.md): historical architecture and research references.

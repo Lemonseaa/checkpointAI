@@ -12,6 +12,7 @@ from loop_harness import LoopHarness
 from loop_harness.api import create_app
 from loop_harness.auth import APIKeyManager
 from loop_harness.console import BackupManager, CostEvent, CostEventStore
+from loop_harness.decision import DecisionLogStore
 from loop_harness.prompt import (
     PromptPatch,
     PromptProposal,
@@ -202,6 +203,62 @@ class V58WebApiTest(unittest.TestCase):
                 json={"baseline_run_id": "baseline", "candidate_run_ids": ["candidate"]},
                 headers=headers,
             )
+            review_package = client.post(
+                "/api/evidence/review-packages",
+                json={"baseline_run_id": "baseline", "candidate_run_ids": ["candidate"]},
+                headers=headers,
+            )
+            review_package_validation = client.post(
+                "/api/evidence/review-packages/validate",
+                json=review_package.json(),
+                headers=headers,
+            )
+            review_decision = client.post(
+                "/api/evidence/review-packages/submit",
+                json={"package": review_package.json(), "reason": "Candidate package is ready for review."},
+                headers=headers,
+            )
+            review_decisions = client.get(
+                "/api/evidence/review-decisions?scenario_id=quant&status=pending",
+                headers=headers,
+            )
+            review_package_decision_status = client.get(
+                f"/api/evidence/review-packages/{review_package.json()['package_id']}/decision",
+                headers=headers,
+            )
+            approval_items = client.get("/api/approvals?scenario_id=quant", headers=headers)
+            review_approval = client.get(
+                f"/api/approvals/{review_decision.json()['decision_id']}",
+                headers=headers,
+            )
+            review_approval_result = client.post(
+                f"/api/approvals/{review_decision.json()['decision_id']}/approve",
+                json={"comment": "Approved for paper review."},
+                headers=headers,
+            )
+            approved_decisions = client.get(
+                "/api/evidence/review-decisions?scenario_id=quant&status=approved",
+                headers=headers,
+            )
+            direct_review_decision = client.post(
+                "/api/evidence/review-packages/submit",
+                json={"package": review_package.json(), "reason": "Second package is ready for direct API review."},
+                headers=headers,
+            )
+            direct_reject = client.post(
+                f"/api/evidence/review-decisions/{direct_review_decision.json()['decision_id']}/reject",
+                json={"comment": "Rejected from direct endpoint for insufficient sample size."},
+                headers=headers,
+            )
+            repeat_direct_reject = client.post(
+                f"/api/evidence/review-decisions/{direct_review_decision.json()['decision_id']}/reject",
+                json={"comment": "Rejecting twice should be a state conflict."},
+                headers=headers,
+            )
+            decision_logs = DecisionLogStore(db_path).list(source_id=review_decision.json()["decision_id"])
+            direct_decision_logs = DecisionLogStore(db_path).list(
+                source_id=direct_review_decision.json()["decision_id"]
+            )
             csv_import = client.post(
                 "/api/evidence/import/quant-csv",
                 json={
@@ -257,6 +314,36 @@ class V58WebApiTest(unittest.TestCase):
         self.assertEqual(workflow_chart.json()["baseline_run_id"], "baseline")
         self.assertEqual(explicit_chart.status_code, 200)
         self.assertEqual(explicit_chart.json()["candidate_points"][0]["run_id"], "candidate")
+        self.assertEqual(review_package.status_code, 200)
+        self.assertEqual(review_package.json()["baseline_run_id"], "baseline")
+        self.assertEqual(review_package.json()["candidate_run_ids"], ["candidate"])
+        self.assertEqual(review_package.json()["recommended_action"], "review_for_paper")
+        self.assertIn("Evidence Review Package", review_package.json()["markdown"])
+        self.assertEqual(review_package_validation.status_code, 200)
+        self.assertTrue(review_package_validation.json()["valid"])
+        self.assertEqual(review_decision.status_code, 200)
+        self.assertEqual(review_decision.json()["status"], "pending")
+        self.assertTrue(review_decision.json()["approval_required"])
+        self.assertEqual(review_decisions.status_code, 200)
+        self.assertEqual(review_decisions.json()[0]["decision_id"], review_decision.json()["decision_id"])
+        self.assertEqual(review_package_decision_status.status_code, 200)
+        self.assertEqual(review_package_decision_status.json()["status"], "pending")
+        self.assertEqual(review_package_decision_status.json()["package_id"], review_package.json()["package_id"])
+        self.assertEqual(approval_items.status_code, 200)
+        self.assertIn("evidence_review_package", [item["item_type"] for item in approval_items.json()])
+        self.assertEqual(review_approval.status_code, 200)
+        self.assertEqual(review_approval.json()["item_type"], "evidence_review_package")
+        self.assertEqual(review_approval_result.status_code, 200)
+        self.assertTrue(review_approval_result.json()["updated"])
+        self.assertEqual(approved_decisions.status_code, 200)
+        self.assertEqual(approved_decisions.json()[0]["status"], "approved")
+        self.assertEqual(decision_logs[0].kind.value, "approve")
+        self.assertEqual(direct_review_decision.status_code, 200)
+        self.assertEqual(direct_reject.status_code, 200)
+        self.assertEqual(direct_reject.json()["status"], "rejected")
+        self.assertEqual(repeat_direct_reject.status_code, 400)
+        self.assertEqual(repeat_direct_reject.json()["code"], "evidence.review_decision_state_conflict")
+        self.assertEqual(direct_decision_logs[0].kind.value, "reject")
         self.assertEqual(csv_import.status_code, 200)
         self.assertEqual(csv_import.json()["imported_count"], 3)
         self.assertEqual(comparison_export.status_code, 200)
@@ -282,6 +369,13 @@ class V58WebApiTest(unittest.TestCase):
         self.assertIn("/api/evidence/workflows/{workflow_id}/graph", paths)
         self.assertIn("/api/evidence/workflows/{workflow_id}/charts/optimization", paths)
         self.assertIn("/api/evidence/charts/optimization", paths)
+        self.assertIn("/api/evidence/review-packages", paths)
+        self.assertIn("/api/evidence/review-packages/validate", paths)
+        self.assertIn("/api/evidence/review-packages/submit", paths)
+        self.assertIn("/api/evidence/review-packages/{package_id}/decision", paths)
+        self.assertIn("/api/evidence/review-decisions", paths)
+        self.assertIn("/api/evidence/review-decisions/{decision_id}/approve", paths)
+        self.assertIn("/api/evidence/review-decisions/{decision_id}/reject", paths)
         self.assertIn("/api/evidence/import/quant-csv", paths)
         self.assertIn("/api/evidence/compare", paths)
         self.assertIn("/api/approvals", paths)
@@ -337,6 +431,7 @@ class V58WebApiTest(unittest.TestCase):
         return {
             "workflow_id": "quant_backtest_v1",
             "run_id": run_id,
+            "scenario_id": "quant",
             "run_kind": "historical",
             "nodes": [
                 {"id": "load_data", "type": "data"},

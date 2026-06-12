@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from loop_harness.evidence import ReviewDecisionStatus, ReviewPackageDecisionStore
 from loop_harness.optimization import (
     ParameterSuggestionStatus,
     ParameterSuggestionStore,
@@ -42,6 +43,7 @@ class ApprovalInbox:
         self.generic_proposals = ProposalStore(db_path)
         self.recommendations = VersionRecommendationStore(db_path)
         self.parameter_suggestions = ParameterSuggestionStore(db_path)
+        self.review_decisions = ReviewPackageDecisionStore(db_path)
 
     def list_items(self, scenario_id: str | None = None) -> list[ApprovalItem]:
         """List pending items across proposal and recommendation stores."""
@@ -115,6 +117,23 @@ class ApprovalInbox:
                     created_at=suggestion.created_at,
                 )
             )
+        for decision in self.review_decisions.list(
+            scenario_id=scenario_id,
+            status=ReviewDecisionStatus.PENDING,
+        ):
+            items.append(
+                ApprovalItem(
+                    id=decision.decision_id,
+                    scenario_id=decision.scenario_id,
+                    item_type="evidence_review_package",
+                    source_id=decision.decision_id,
+                    title=f"Evidence review package: {decision.package_id}",
+                    summary=decision.reason,
+                    status=decision.status.value,
+                    recommended_action=decision.recommended_action,
+                    created_at=decision.created_at,
+                )
+            )
         return sorted(items, key=lambda item: item.created_at)
 
     def approve(self, source_id: str, reason: str) -> bool:
@@ -133,6 +152,9 @@ class ApprovalInbox:
             return self.recommendations.update_status(source_id, RecommendationStatus.ACCEPTED)
         if self.parameter_suggestions.get(source_id) is not None:
             return self.parameter_suggestions.update_status(source_id, ParameterSuggestionStatus.ACCEPTED)
+        if self.review_decisions.get(source_id) is not None:
+            self.review_decisions.update_status(source_id, ReviewDecisionStatus.APPROVED, reason)
+            return True
         return False
 
     def reject(self, source_id: str, reason: str) -> bool:
@@ -151,4 +173,7 @@ class ApprovalInbox:
             return self.recommendations.update_status(source_id, RecommendationStatus.REJECTED)
         if self.parameter_suggestions.get(source_id) is not None:
             return self.parameter_suggestions.update_status(source_id, ParameterSuggestionStatus.REJECTED)
+        if self.review_decisions.get(source_id) is not None:
+            self.review_decisions.update_status(source_id, ReviewDecisionStatus.REJECTED, reason)
+            return True
         return False

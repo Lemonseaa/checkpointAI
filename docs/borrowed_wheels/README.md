@@ -16,7 +16,7 @@ Do not rebuild mature plumbing unless it directly supports the evidence harness.
 
 ## Current Files
 
+- [WHEEL_STRATEGY.md](WHEEL_STRATEGY.md): what to reuse, borrow, own, or connect.
 - [reference_projects.md](reference_projects.md): Archon, ARIS, learn-harness-engineering, Nexent, and replacement tools.
 - [legacy_replacement_matrix.md](legacy_replacement_matrix.md): old module classification and cleanup order.
 - [adapter_checklist.md](adapter_checklist.md): external adapter compatibility checklist.
-

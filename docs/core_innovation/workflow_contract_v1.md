@@ -112,6 +112,31 @@ versions, model settings, strategy parameters, tool policy, or workflow version.
 `artifacts`: pointers or summaries for reports, charts, logs, generated files,
 or backtest result files.
 
+## Structured Output Requirement
+
+External adapters should return structured output rather than raw text whenever
+possible. A human-readable answer is useful, but it is not enough for evidence.
+
+Recommended output shape:
+
+```json
+{
+  "answer": "Candidate strategy improved Sharpe but increased turnover.",
+  "metrics": {
+    "sharpe": 1.31,
+    "max_drawdown": 0.11,
+    "turnover": 0.48
+  },
+  "value_summary": "Sharpe improved from baseline while guardrails stayed valid.",
+  "trace": [],
+  "artifacts": []
+}
+```
+
+If an adapter can only return unstructured text, Loop Harness should mark the
+run as low observability and avoid optimization recommendations until metrics
+and trace are added.
+
 ## Optional But Strongly Recommended Fields
 
 - `baseline_run_id`
@@ -159,6 +184,26 @@ Reject or mark as low-value when:
 - `run_kind` is missing.
 - The adapter silently fabricates evidence instead of marking data as synthetic.
 - The run cannot be linked to a scenario.
+
+## Gap Report
+
+Every ingested run should be able to produce a gap report. The gap report is the
+bridge between workflow visualization and optimization readiness.
+
+It should answer:
+
+```text
+Which nodes are black boxes?
+Which nodes have no trace?
+Which nodes produce no metrics?
+Which metrics have no schema?
+Which parts are observable but not optimizable?
+What evidence must be added before recommendations are trustworthy?
+```
+
+Optimization is blocked when critical gaps prevent baseline/candidate
+comparison. The correct fix is better instrumentation in the external workflow,
+not a more aggressive optimizer.
 
 ## Evidence Strength
 

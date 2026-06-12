@@ -60,7 +60,10 @@ def _payload(run_id: str = "candidate") -> dict[str, object]:
             "latency_ms": {"direction": "lower", "category": "system", "weight": 0.0},
         },
         "config": {"fast_window": 8, "slow_window": 21},
-        "artifacts": [{"type": "json", "path": "runs/candidate.json"}],
+        "artifacts": [
+            {"type": "json", "path": "runs/candidate.json", "metadata": {"node_id": "researcher"}},
+            {"type": "log", "path": "runs/broker.log", "metadata": {"node_id": "broker"}},
+        ],
         "metadata": {"data_source": "fixture_history"},
     }
 
@@ -84,6 +87,7 @@ class WorkflowContractNext20Test(unittest.TestCase):
             workflow_map = service.workflow_map("quant_flow")
             gaps = service.gap_report("candidate")
             node_detail = service.node_detail("candidate", "researcher")
+            black_box_detail = service.node_detail("candidate", "broker")
 
             self.assertEqual(result.run.scenario_id, "quant")
             self.assertEqual(workflow_map.workflow_id, "quant_flow")
@@ -99,6 +103,9 @@ class WorkflowContractNext20Test(unittest.TestCase):
             self.assertTrue(node_detail.optimizable)
             self.assertEqual(node_detail.metrics["sharpe"], 1.2)
             self.assertEqual(node_detail.input_summary, "bars + config")
+            self.assertEqual(node_detail.artifact_refs[0]["path"], "runs/candidate.json")
+            self.assertTrue(any(gap.code == "node.black_box" for gap in black_box_detail.gaps))
+            self.assertEqual(black_box_detail.artifact_refs[0]["path"], "runs/broker.log")
 
     def test_goal_profile_boundary_trace_normalizer_and_decision_memory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

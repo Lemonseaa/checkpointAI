@@ -252,9 +252,15 @@ export function EvidencePage() {
           )}
         </Card>
         <Card title="Decision Memory">
-          <p className="text-sm text-ink">
-            {decisionMemory.data?.summary ?? "No decision memory has been recorded for this scenario yet."}
-          </p>
+          {decisionMemory.data ? (
+            <div className="space-y-3 text-sm">
+              <p className="text-ink">{decisionMemory.data.summary}</p>
+              <PatternList title="Approved patterns" values={decisionMemory.data.approved_patterns} />
+              <PatternList title="Rejected patterns" values={decisionMemory.data.rejected_patterns} />
+            </div>
+          ) : (
+            <p className="text-sm text-muted">No decision memory has been recorded for this scenario yet.</p>
+          )}
         </Card>
       </div>
 
@@ -344,6 +350,15 @@ export function EvidencePage() {
         </Card>
       </div>
     </>
+  );
+}
+
+function PatternList({ title, values }: { title: string; values: string[] }) {
+  return (
+    <div>
+      <div className="text-xs font-medium uppercase text-muted">{title}</div>
+      <div className="mt-1 text-ink">{values.length ? values.join(", ") : "-"}</div>
+    </div>
   );
 }
 

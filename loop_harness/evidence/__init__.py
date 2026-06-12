@@ -42,6 +42,13 @@ from loop_harness.evidence.models import (
 )
 from loop_harness.evidence.quant_contracts import QuantBacktestOutput, QuantRunInput
 from loop_harness.evidence.quant_drill import QuantDrillResult, QuantDrillRunner
+from loop_harness.evidence.replay import PackageReplayValidator, ReplayValidationResult
+from loop_harness.evidence.review_decision import (
+    ReviewDecisionStatus,
+    ReviewPackageDecision,
+    ReviewPackageDecisionStore,
+)
+from loop_harness.evidence.review_package import EvidenceReviewPackage, EvidenceReviewPackageBuilder
 from loop_harness.evidence.sdk import WorkflowAdapterSDK
 from loop_harness.evidence.service import EvidenceService
 from loop_harness.evidence.shadow_queue import ShadowReplayItem, ShadowReplayQueueStore
@@ -64,6 +71,8 @@ __all__ = [
     "EvidenceBaseline",
     "EvidenceBaselineStore",
     "EvidenceReport",
+    "EvidenceReviewPackage",
+    "EvidenceReviewPackageBuilder",
     "EvidenceRunKind",
     "EvidenceService",
     "EvidenceStore",
@@ -76,12 +85,17 @@ __all__ = [
     "OptimizationChartPayload",
     "OptimizationGoalProfile",
     "OptimizationGoalStore",
+    "PackageReplayValidator",
     "QuantBacktestOutput",
     "QuantBacktestCSVImporter",
     "QuantCSVImportResult",
     "QuantDrillResult",
     "QuantDrillRunner",
     "QuantRunInput",
+    "ReplayValidationResult",
+    "ReviewDecisionStatus",
+    "ReviewPackageDecision",
+    "ReviewPackageDecisionStore",
     "ShadowReplayItem",
     "ShadowReplayQueueStore",
     "StoredEvidenceRun",

@@ -33,7 +33,12 @@ External workflow run
 
 ## Current Files
 
+- [CORE_INNOVATION.md](CORE_INNOVATION.md): product thesis and the owned innovation surface.
 - [metrics_reference.md](metrics_reference.md): metric direction, category, and comparison reference.
 - [workflow_contract_v1.md](workflow_contract_v1.md): minimum external workflow evidence contract.
+- [workflow_visualization_model.md](workflow_visualization_model.md): graph payload and black-box visualization model.
+- [charts_api.md](charts_api.md): chart payloads for optimization evidence.
+- [internal_agent_collaboration.md](internal_agent_collaboration.md): internal Observer/Evaluator/Proposer/Reviewer/Reporter model.
+- [ui_information_architecture.md](ui_information_architecture.md): UI navigation and product surface boundaries.
 - [impact_console.md](impact_console.md): UI scope and Evidence API boundaries.
 - [user_preference.md](user_preference.md): human-owned methodology, preference, and Hermes draft flow.
