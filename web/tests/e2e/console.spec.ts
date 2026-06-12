@@ -5,6 +5,7 @@ const evidenceRuns = [
     run: {
       workflow_id: "quant-demo",
       run_id: "baseline-run-001",
+      scenario_id: "quant",
       run_kind: "historical",
       metrics: { sharpe: 0.82, max_drawdown: 0.18, latency_ms: 120 },
       metadata: { strategy: "baseline" }
@@ -50,6 +51,7 @@ const evidenceRuns = [
     run: {
       workflow_id: "quant-demo",
       run_id: "candidate-run-002",
+      scenario_id: "quant",
       run_kind: "historical",
       metrics: { sharpe: 1.08, max_drawdown: 0.13, latency_ms: 138 },
       metadata: { strategy: "candidate" }
@@ -139,6 +141,123 @@ const comparisonReport = {
   }
 };
 
+function graphForRun(runId: string) {
+  const stored = evidenceRuns.find((item) => item.run.run_id === runId) ?? evidenceRuns[1];
+  const metricSources: Record<string, string[]> = {};
+  for (const nodeId of stored.visualization.metric_node_ids) {
+    if (nodeId === "agent") {
+      metricSources.sharpe = ["agent"];
+    }
+    if (nodeId === "risk") {
+      metricSources.max_drawdown = ["risk"];
+    }
+  }
+  return {
+    workflow_id: stored.run.workflow_id,
+    run_id: stored.run.run_id,
+    scenario_id: stored.run.scenario_id,
+    nodes: stored.visualization.nodes.map((node, index) => ({
+      id: node.id,
+      label: node.name ?? node.id,
+      node_type: node.type,
+      status: "succeeded",
+      layout: { x: index, y: 0 },
+      metric_names: Object.entries(metricSources)
+        .filter(([, sources]) => sources.includes(node.id))
+        .map(([metric]) => metric),
+      artifact_refs: [],
+      black_box: stored.visualization.black_box_node_ids.includes(node.id),
+      error: stored.visualization.error_node_ids.includes(node.id),
+      high_cost: node.id === "agent",
+      high_latency: node.id === "agent",
+      optimizable: node.id === "agent",
+      gaps:
+        node.id === "risk"
+          ? [
+              {
+                code: "node.black_box",
+                severity: "warning",
+                message: "Node risk is not fully observable.",
+                node_id: "risk",
+                details: {}
+              }
+            ]
+          : [],
+      metadata: node.metadata
+    })),
+    edges: stored.visualization.edges.map((edge) => ({
+      source: edge.source,
+      target: edge.target,
+      edge_type: edge.type,
+      active: true,
+      metadata: edge.metadata
+    })),
+    run_path: stored.visualization.run_path,
+    metric_sources: metricSources,
+    filters: {
+      black_box: stored.visualization.black_box_node_ids,
+      error: stored.visualization.error_node_ids,
+      metric: stored.visualization.metric_node_ids,
+      high_cost: ["agent"],
+      high_latency: ["agent"]
+    },
+    legend: {
+      black_box: "Node has incomplete observability.",
+      error: "Node has failed trace evidence.",
+      metric: "Node produced at least one metric.",
+      high_cost: "Node has the highest observed cost in this run.",
+      high_latency: "Node has the highest observed latency in this run."
+    },
+    summary: `Graph for ${stored.run.workflow_id}/${stored.run.run_id}.`
+  };
+}
+
+const optimizationChart = {
+  workflow_id: "quant-demo",
+  scenario_id: "quant",
+  baseline_run_id: "baseline-run-001",
+  baseline_metrics: { sharpe: 0.82, max_drawdown: 0.18 },
+  candidate_points: [
+    {
+      run_id: "candidate-run-002",
+      scenario_id: "quant",
+      run_kind: "historical",
+      total_return: 0.28,
+      sharpe: 1.08,
+      max_drawdown: 0.13,
+      win_rate: 0.58,
+      turnover: 1.6,
+      objective_score: 0.31,
+      guardrail_status: "ok",
+      candidate_quality: "candidate",
+      best_candidate: true,
+      summary: "candidate-run-002 improved Sharpe without violating drawdown.",
+      metadata: {}
+    },
+    {
+      run_id: "weak-run-003",
+      scenario_id: "quant",
+      run_kind: "historical",
+      total_return: 0.08,
+      sharpe: 0.42,
+      max_drawdown: 0.28,
+      win_rate: 0.42,
+      turnover: 4.2,
+      objective_score: -0.4,
+      guardrail_status: "violated",
+      candidate_quality: "weak",
+      best_candidate: false,
+      summary: "weak-run-003 violated max_drawdown.",
+      metadata: {}
+    }
+  ],
+  metric_trends: [],
+  chart_fields: ["total_return", "sharpe", "max_drawdown", "objective_score"],
+  guardrail_summary: "1 candidates violated guardrails: weak-run-003.",
+  best_candidate_run_id: "candidate-run-002",
+  summary: "Baseline baseline-run-001 compared with 2 candidates; best=candidate-run-002; guardrail_violations=1."
+};
+
 let activeBaselineRunId = "";
 
 test("renders the control console shell", async ({ page }) => {
@@ -149,6 +268,7 @@ test("renders the control console shell", async ({ page }) => {
   await expect(page.getByLabel("API Token")).toBeVisible();
   await expect(page.getByRole("link", { name: "Approvals" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Evidence" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Workflows" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Runs" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Shadows" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Learning" })).toBeVisible();
@@ -164,7 +284,94 @@ test("opens the evidence console page", async ({ page }) => {
   await page.route("**/api/evidence/runs", async (route) => {
     await route.fulfill({ json: evidenceRuns });
   });
+  await page.route("**/api/evidence/runs/*/gaps", async (route) => {
+    await route.fulfill({
+      json: {
+        workflow_id: "quant-demo",
+        run_id: "candidate-run-002",
+        status: "warning",
+        gaps: [
+          {
+            code: "node.black_box",
+            severity: "warning",
+            message: "Node risk is not fully observable.",
+            node_id: "risk",
+            details: {}
+          }
+        ],
+        black_box_node_ids: ["risk"],
+        missing_metric_node_ids: ["data"],
+        missing_trace_node_ids: [],
+        summary: "Run candidate-run-002 has 1 evidence gaps; status=warning."
+      }
+    });
+  });
+  await page.route("**/api/evidence/runs/*/graph", async (route) => {
+    const runId = route.request().url().split("/").at(-2) ?? "";
+    await route.fulfill({ json: graphForRun(runId) });
+  });
+  await page.route("**/api/evidence/workflows/*/graph", async (route) => {
+    await route.fulfill({ json: graphForRun("candidate-run-002") });
+  });
+  await page.route("**/api/evidence/workflows/*/charts/optimization", async (route) => {
+    await route.fulfill({ json: optimizationChart });
+  });
+  await page.route("**/api/evidence/runs/*/nodes/*", async (route) => {
+    const url = route.request().url();
+    const nodeId = url.split("/").pop() ?? "";
+    await route.fulfill({
+      json: {
+        workflow_id: "quant-demo",
+        run_id: "candidate-run-002",
+        node_id: nodeId,
+        name: nodeId === "agent" ? "Strategy agent" : "Risk check",
+        type: nodeId === "agent" ? "agent" : "tool",
+        status: "succeeded",
+        input_summary: "bars + config",
+        output_summary: nodeId === "agent" ? "candidate signal" : "risk passed",
+        metrics: nodeId === "agent" ? { sharpe: 1.08 } : { max_drawdown: 0.13 },
+        latency_ms: nodeId === "agent" ? 110 : 8,
+        cost: nodeId === "agent" ? 0.15 : 0.02,
+        error: null,
+        black_box: nodeId === "risk",
+        optimizable: nodeId === "agent",
+        metadata: {}
+      }
+    });
+  });
+  await page.route("**/api/evidence/goals/quant", async (route) => {
+    await route.fulfill({
+      json: {
+        scenario_id: "quant",
+        primary_metrics: ["sharpe"],
+        guardrail_metrics: ["max_drawdown"],
+        max_cost_increase: 0.1,
+        max_risk_level: "approval",
+        preferences: { trading_frequency: "low" }
+      }
+    });
+  });
+  await page.route("**/api/evidence/decision-memory/quant", async (route) => {
+    await route.fulfill({
+      json: {
+        scenario_id: "quant",
+        approved_count: 1,
+        rejected_count: 0,
+        approved_patterns: ["prompt", "sharpe"],
+        rejected_patterns: [],
+        summary: "Scenario quant: 1 approvals, 0 rejections. Use this as decision context, not automatic authority."
+      }
+    });
+  });
   await page.route("**/api/evidence/runs/*", async (route) => {
+    if (
+      route.request().url().includes("/gaps") ||
+      route.request().url().includes("/graph") ||
+      route.request().url().includes("/nodes/")
+    ) {
+      await route.fallback();
+      return;
+    }
     const runId = route.request().url().split("/").pop() ?? "";
     const stored = evidenceRuns.find((item) => item.run.run_id === runId);
     if (!stored) {
@@ -258,12 +465,19 @@ test("opens the evidence console page", async ({ page }) => {
   await expect(page.getByText("Load data")).toBeVisible();
   await expect(page.getByText("Strategy agent")).toBeVisible();
   await expect(page.getByText("data → agent → risk")).toBeVisible();
+  await expect(page.getByText("Graph evidence")).toBeVisible();
+  await expect(page.getByText("Metric sources")).toBeVisible();
+  await expect(page.getByText("Optimization Charts")).toBeVisible();
+  await expect(page.getByText("Optimization impact chart")).toBeVisible();
+  await expect(page.getByText("candidate-run-002").first()).toBeVisible();
+  await expect(page.getByText("weak-run-003").first()).toBeVisible();
+  await expect(page.getByText("1 candidates violated guardrails: weak-run-003.").first()).toBeVisible();
   await expect(page.getByText("Traced").first()).toBeVisible();
   await expect(page.getByText("Metric").first()).toBeVisible();
   await expect(page.getByText("Black box").first()).toBeVisible();
   await expect(page.getByText("Error").first()).toBeVisible();
   await expect(page.getByText("Evidence Quality")).toBeVisible();
-  await expect(page.getByText("warning")).toBeVisible();
+  await expect(page.getByText("warning").first()).toBeVisible();
   await expect(page.getByText("black_box_nodes_present")).toBeVisible();
   await expect(page.getByText("Baseline vs Candidate")).toBeVisible();
   await expect(page.getByLabel("Baseline run")).toBeVisible();
@@ -280,22 +494,38 @@ test("opens the evidence console page", async ({ page }) => {
   await expect(nodeEvidence.getByText("110 ms")).toBeVisible();
   await expect(nodeEvidence.getByText("$0.150")).toBeVisible();
   await expect(nodeEvidence.getByText("Metric captured")).toBeVisible();
+  await expect(nodeEvidence.getByText("Optimizable")).toBeVisible();
+  await expect(nodeEvidence.getByText("candidate signal")).toBeVisible();
 
   await page.getByRole("button", { name: "Risk check" }).click();
   await expect(nodeEvidence.getByText("Black-box node")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Evidence Gaps" })).toBeVisible();
+  await expect(page.getByText("Node risk is not fully observable.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Optimization Goal" })).toBeVisible();
+  await expect(page.getByText("Primary: sharpe")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Decision Memory" })).toBeVisible();
+  await expect(page.getByText("Scenario quant: 1 approvals, 0 rejections.")).toBeVisible();
 
   await page.getByRole("button", { name: "Compare" }).click();
 
   await expect(page.getByText("approve_candidate")).toBeVisible();
   await expect(page.getByText("Candidate improves Sharpe and lowers drawdown versus baseline.")).toBeVisible();
-  await expect(page.getByText("sharpe", { exact: true })).toBeVisible();
+  await expect(page.getByText("sharpe", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("business / +0.260")).toBeVisible();
-  await expect(page.getByText("max_drawdown", { exact: true })).toBeVisible();
+  await expect(page.getByText("max_drawdown", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("system / +18.000")).toBeVisible();
+  await expect(page.getByText("Impact Summary")).toBeVisible();
+  await expect(page.getByText("Business metrics improved: 1; worsened: 1; system metrics tracked: 1.")).toBeVisible();
   await page.getByRole("button", { name: "Create approval proposal" }).click();
   await expect(page.getByRole("link", { name: "Open approval evidence-proposal-001" })).toBeVisible();
   await expect(page.getByText("What to do next")).toBeVisible();
   await expect(page.getByText("Review candidate approval")).toBeVisible();
   await expect(page.getByText("Add trace coverage before trusting this workflow")).toBeVisible();
   await expect(page.getByText("Improve metric capture before optimization")).toBeVisible();
+
+  await page.getByRole("link", { name: "Workflows" }).click();
+  await expect(page).toHaveURL(/\/workflows$/);
+  await expect(page.getByRole("heading", { name: "Workflow Maps" })).toBeVisible();
+  await expect(page.getByText("Imported workflow structures")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "quant-demo" })).toBeVisible();
 });

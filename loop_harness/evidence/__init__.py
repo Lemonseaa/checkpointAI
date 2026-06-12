@@ -1,6 +1,32 @@
 """External workflow evidence harness."""
 
 from loop_harness.evidence.baseline_store import EvidenceBaseline, EvidenceBaselineStore
+from loop_harness.evidence.boundary import (
+    CandidateBoundary,
+    CandidateBoundaryResult,
+    CandidateChange,
+)
+from loop_harness.evidence.charts import (
+    CandidateChartPoint,
+    MetricTrendPoint,
+    OptimizationChartBuilder,
+    OptimizationChartPayload,
+)
+from loop_harness.evidence.contract import (
+    ContractIssue,
+    ContractValidationResult,
+    WorkflowContractValidator,
+)
+from loop_harness.evidence.csv_import import QuantBacktestCSVImporter, QuantCSVImportResult
+from loop_harness.evidence.decision_memory import DecisionMemorySummary, HumanDecisionMemory
+from loop_harness.evidence.gap import EvidenceGap, EvidenceGapReport
+from loop_harness.evidence.goal import OptimizationGoalProfile, OptimizationGoalStore
+from loop_harness.evidence.graph import (
+    WorkflowGraphBuilder,
+    WorkflowGraphEdge,
+    WorkflowGraphNode,
+    WorkflowGraphPayload,
+)
 from loop_harness.evidence.models import (
     ArtifactRef,
     DecisionRecommendation,
@@ -14,13 +40,27 @@ from loop_harness.evidence.models import (
     WorkflowNode,
     WorkflowVisualization,
 )
+from loop_harness.evidence.quant_contracts import QuantBacktestOutput, QuantRunInput
 from loop_harness.evidence.quant_drill import QuantDrillResult, QuantDrillRunner
+from loop_harness.evidence.sdk import WorkflowAdapterSDK
 from loop_harness.evidence.service import EvidenceService
+from loop_harness.evidence.shadow_queue import ShadowReplayItem, ShadowReplayQueueStore
 from loop_harness.evidence.storage import EvidenceStore
+from loop_harness.evidence.trace import TraceNormalizer
+from loop_harness.evidence.workflow_map import NodeEvidenceDetail, WorkflowMapSummary
 
 __all__ = [
     "ArtifactRef",
+    "CandidateBoundary",
+    "CandidateBoundaryResult",
+    "CandidateChange",
+    "CandidateChartPoint",
+    "ContractIssue",
+    "ContractValidationResult",
     "DecisionRecommendation",
+    "DecisionMemorySummary",
+    "EvidenceGap",
+    "EvidenceGapReport",
     "EvidenceBaseline",
     "EvidenceBaselineStore",
     "EvidenceReport",
@@ -28,12 +68,33 @@ __all__ = [
     "EvidenceService",
     "EvidenceStore",
     "ExternalWorkflowRun",
+    "HumanDecisionMemory",
     "IngestResult",
+    "NodeEvidenceDetail",
+    "MetricTrendPoint",
+    "OptimizationChartBuilder",
+    "OptimizationChartPayload",
+    "OptimizationGoalProfile",
+    "OptimizationGoalStore",
+    "QuantBacktestOutput",
+    "QuantBacktestCSVImporter",
+    "QuantCSVImportResult",
     "QuantDrillResult",
     "QuantDrillRunner",
+    "QuantRunInput",
+    "ShadowReplayItem",
+    "ShadowReplayQueueStore",
     "StoredEvidenceRun",
     "TraceEvent",
+    "TraceNormalizer",
+    "WorkflowAdapterSDK",
     "WorkflowEdge",
+    "WorkflowContractValidator",
+    "WorkflowGraphBuilder",
+    "WorkflowGraphEdge",
+    "WorkflowGraphNode",
+    "WorkflowGraphPayload",
+    "WorkflowMapSummary",
     "WorkflowNode",
     "WorkflowVisualization",
 ]

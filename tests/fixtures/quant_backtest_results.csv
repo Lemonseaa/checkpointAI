@@ -1,0 +1,4 @@
+run_id,fast_window,slow_window,total_return,sharpe,max_drawdown,win_rate,turnover,trade_count
+csv_baseline,8,21,0.18,0.92,0.145,0.53,1.8,82
+csv_candidate_strong,10,24,0.28,1.42,0.11,0.58,1.6,94
+csv_candidate_weak,3,5,0.08,0.42,0.28,0.42,4.2,180

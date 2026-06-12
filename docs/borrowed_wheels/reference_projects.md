@@ -47,6 +47,7 @@ When LoopHarness needs stronger workflow contract discipline:
 - deterministic verification steps
 - approval gates
 - reusable workflow skeletons
+- adapter compatibility scoring before implementation
 ```
 
 How it maps to LoopHarness:
@@ -86,6 +87,7 @@ When LoopHarness needs stronger evidence review:
 - adversarial review
 - handoff artifacts
 - confidence boundaries
+- rejection criteria for weak evidence
 ```
 
 How it maps to LoopHarness:
@@ -161,6 +163,7 @@ When designing UI/product experience:
 - agent versioning
 - tool ecosystem integration
 - personal knowledge boundaries
+- workflow import visibility without becoming a workflow builder
 ```
 
 How it maps to LoopHarness:
@@ -263,6 +266,17 @@ LoopHarness rule:
 Use guarded MCP/tool connectors.
 External tools are not trusted by default.
 Sensitive side effects still require policy and human boundaries.
+
+---
+
+## Adapter Candidates
+
+Use [Adapter Compatibility Checklist](adapter_checklist.md) before implementing
+adapters for TradingAgents, Dify workflows, CrewAI, or custom scripts.
+
+The first serious third-party candidate should be TradingAgents because quant
+workflows can produce historical backtests, baseline/candidate metrics, and
+repeatable evidence faster than content workflows.
 ```
 
 ---

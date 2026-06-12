@@ -1,10 +1,10 @@
-# LoopHarness Blueprint
+# Loop Harness Blueprint
 
 **External Workflow Evidence Harness**
 
 ## One Line
 
-LoopHarness 是外部工作流的证据与可视化诊断 Harness。
+Loop Harness 是外部工作流的证据与可视化诊断 Harness。
 
 它不负责替代外部工作流，不做通用 Agent 平台，不做拖拽工作流引擎。它接入外部 Agent / 自动化 / 业务流程，把每次运行和改动变成可观察、可视化、可比较、可验证、可审批、可回滚的证据。
 
@@ -14,10 +14,10 @@ LoopHarness 是外部工作流的证据与可视化诊断 Harness。
 
 ```text
 Dify / Nexent / Archon / LangGraph / TradingAgents = 执行工作流
-LoopHarness = 看清工作流 + 判断工作流改动有没有变好
+Loop Harness = 看清工作流 + 判断工作流改动有没有变好
 ```
 
-LoopHarness 的核心不是“让 AI 干活”，而是：
+Loop Harness 的核心不是“让 AI 干活”，而是：
 
 ```text
 证明一次改动是否值得保留。
@@ -27,7 +27,7 @@ LoopHarness 的核心不是“让 AI 干活”，而是：
 
 ## Core Question
 
-每次外部工作流发生改动时，LoopHarness 必须回答：
+每次外部工作流发生改动时，Loop Harness 必须回答：
 
 ```text
 1. 改了什么？
@@ -47,16 +47,16 @@ LoopHarness 的核心不是“让 AI 干活”，而是：
 
 ## New Architecture
 
-```text
-External Workflow
-  -> Evidence Adapter
-  -> Workflow Contract
-  -> Workflow Visualization
-  -> Trace + Metrics
-  -> Baseline Compare
-  -> Evidence Review
-  -> Report
-  -> Human Decision / Rollback
+```mermaid
+flowchart LR
+    A["External Workflow"] --> B["Evidence Adapter"]
+    B --> C["Workflow Contract"]
+    C --> D["Workflow Visualization"]
+    C --> E["Trace + Metrics"]
+    E --> F["Baseline Compare"]
+    F --> G["Evidence Review"]
+    G --> H["Report"]
+    H --> I["Human Decision / Rollback"]
 ```
 
 ---
@@ -205,7 +205,7 @@ repeatable quant-shaped evidence drill
 | `docs/README.md` | 文档结构入口 |
 | `docs/BLUEPRINT.md` | 当前方向总纲 |
 | `docs/STRATEGIC_RESET_PLAN.md` | 新执行计划 |
-| `docs/core_innovation/` | LoopHarness 自己必须掌握的核心创新 |
+| `docs/core_innovation/` | Loop Harness 自己必须掌握的核心创新 |
 | `docs/core_innovation/metrics_reference.md` | 指标参考 |
 | `docs/core_innovation/user_preference.md` | 人类偏好 / Hermes 草稿机制 |
 | `docs/borrowed_wheels/` | 外部参考项目、替代轮子、接入检查 |

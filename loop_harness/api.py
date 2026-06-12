@@ -19,13 +19,23 @@ from loop_harness.autonomy import AutoActionQueue, AutonomyActionStore, Autonomy
 from loop_harness.config_version import ConfigBranchStore, ConfigVersionService, ConfigVersionStore
 from loop_harness.console import ApprovalInbox, BackupManager, ConsoleDashboard, ConsoleReadModel
 from loop_harness.decision import DecisionKind, DecisionLogStore, DecisionRecord
-from loop_harness.evidence import EvidenceBaselineStore
+from loop_harness.evidence import (
+    CandidateBoundary,
+    CandidateChange,
+    EvidenceBaselineStore,
+    HumanDecisionMemory,
+    OptimizationGoalProfile,
+    OptimizationGoalStore,
+    ShadowReplayItem,
+    ShadowReplayQueueStore,
+    WorkflowContractValidator,
+)
 from loop_harness.external_agents import ExternalAgentConnection, ExternalAgentConnectionStore
 from loop_harness.harness import EvidenceHarness
 from loop_harness.learning import ObservationStore, SafetyFindingStore, ValidationSummaryStore
 from loop_harness.logs import RawLogStore, SummaryLogStore
 from loop_harness.loop_harness import LoopHarness
-from loop_harness.metrics import MetricSchemaStore
+from loop_harness.metrics import MetricSchema, MetricSchemaStore
 from loop_harness.optimization import ParameterSuggestionStore
 from loop_harness.prompt import (
     PromptProposalStore,
@@ -159,7 +169,7 @@ def create_app(
 
     @app.get("/api/version")
     def api_version(_auth: None = Depends(require_auth)) -> dict[str, str]:
-        return {"name": "LoopHarness", "version": "v5"}
+        return {"name": "Loop Harness", "version": "v5"}
 
     @app.get("/api/auth/check")
     def api_auth_check(_auth: None = Depends(require_auth)) -> dict[str, bool]:
@@ -229,6 +239,184 @@ def create_app(
                 status_code=404,
                 detail=_api_error("evidence.run_not_found", "Evidence run not found.", {"run_id": run_id}),
             ) from None
+
+    @app.get("/api/evidence/workflows/{workflow_id}/map")
+    def evidence_workflow_map(workflow_id: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        try:
+            return EvidenceHarness(active_db_path).workflow_map(workflow_id).model_dump(mode="json")
+        except ValueError:
+            raise HTTPException(
+                status_code=404,
+                detail=_api_error("evidence.workflow_not_found", "Evidence workflow not found.", {"workflow_id": workflow_id}),
+            ) from None
+
+    @app.get("/api/evidence/workflows/{workflow_id}/graph")
+    def evidence_workflow_graph(workflow_id: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        try:
+            return EvidenceHarness(active_db_path).graph_for_workflow(workflow_id).model_dump(mode="json")
+        except ValueError:
+            raise HTTPException(
+                status_code=404,
+                detail=_api_error(
+                    "evidence.workflow_not_found",
+                    "Evidence workflow graph not found.",
+                    {"workflow_id": workflow_id},
+                ),
+            ) from None
+
+    @app.get("/api/evidence/runs/{run_id}/graph")
+    def evidence_run_graph(run_id: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        try:
+            return EvidenceHarness(active_db_path).graph_for_run(run_id).model_dump(mode="json")
+        except ValueError:
+            raise HTTPException(
+                status_code=404,
+                detail=_api_error("evidence.run_not_found", "Evidence run graph not found.", {"run_id": run_id}),
+            ) from None
+
+    @app.get("/api/evidence/workflows/{workflow_id}/charts/optimization")
+    def evidence_workflow_optimization_chart(workflow_id: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        try:
+            return EvidenceHarness(active_db_path).optimization_chart(workflow_id).model_dump(mode="json")
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=_api_error(
+                    "evidence.chart_not_found",
+                    str(exc),
+                    {"workflow_id": workflow_id},
+                ),
+            ) from None
+
+    @app.post("/api/evidence/charts/optimization")
+    def evidence_explicit_optimization_chart(
+        payload: dict[str, Any],
+        _auth: None = Depends(require_auth),
+    ) -> dict[str, Any]:
+        baseline_run_id = str(payload.get("baseline_run_id", ""))
+        candidate_run_ids = [str(item) for item in payload.get("candidate_run_ids", [])]
+        if not baseline_run_id or not candidate_run_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=_api_error(
+                    "evidence.chart_missing_field",
+                    "baseline_run_id and candidate_run_ids are required.",
+                    {},
+                ),
+            )
+        try:
+            return EvidenceHarness(active_db_path).optimization_chart_for_runs(
+                baseline_run_id,
+                candidate_run_ids,
+            ).model_dump(mode="json")
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=_api_error("evidence.run_not_found", str(exc), {}),
+            ) from None
+
+    @app.post("/api/evidence/import/quant-csv")
+    def evidence_import_quant_csv(payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        try:
+            path = str(payload["path"])
+            workflow_id = str(payload["workflow_id"])
+        except KeyError as exc:
+            missing = str(exc).strip("'")
+            raise HTTPException(
+                status_code=400,
+                detail=_api_error("evidence.import_missing_field", "Missing import field.", {"field": missing}),
+            ) from None
+        try:
+            return EvidenceHarness(active_db_path).ingest_quant_csv(
+                path,
+                workflow_id=workflow_id,
+                scenario_id=str(payload.get("scenario_id", "quant")),
+                run_kind=str(payload.get("run_kind", "historical")),
+            ).model_dump(mode="json")
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=_api_error("evidence.import_failed", str(exc), {}),
+            ) from None
+
+    @app.get("/api/evidence/runs/{run_id}/gaps")
+    def evidence_gap_report(run_id: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        try:
+            return EvidenceHarness(active_db_path).gap_report(run_id).model_dump(mode="json")
+        except ValueError:
+            raise HTTPException(
+                status_code=404,
+                detail=_api_error("evidence.run_not_found", "Evidence run not found.", {"run_id": run_id}),
+            ) from None
+
+    @app.get("/api/evidence/runs/{run_id}/nodes/{node_id}")
+    def evidence_node_detail(run_id: str, node_id: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        try:
+            return EvidenceHarness(active_db_path).node_detail(run_id, node_id).model_dump(mode="json")
+        except ValueError:
+            raise HTTPException(
+                status_code=404,
+                detail=_api_error(
+                    "evidence.node_not_found",
+                    "Evidence node not found.",
+                    {"run_id": run_id, "node_id": node_id},
+                ),
+            ) from None
+
+    @app.post("/api/evidence/contracts/validate")
+    def evidence_contract_validate(payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        return WorkflowContractValidator().validate(payload).model_dump(mode="json")
+
+    @app.post("/api/evidence/boundary/classify")
+    def evidence_boundary_classify(payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        return CandidateBoundary().classify(CandidateChange.model_validate(payload)).model_dump(mode="json")
+
+    @app.post("/api/evidence/goals/{scenario_id}")
+    def save_evidence_goal(
+        scenario_id: str,
+        payload: dict[str, Any],
+        _auth: None = Depends(require_auth),
+    ) -> dict[str, Any]:
+        profile = OptimizationGoalProfile(
+            scenario_id=scenario_id,
+            primary_metrics=[str(item) for item in payload.get("primary_metrics", [])],
+            guardrail_metrics=[str(item) for item in payload.get("guardrail_metrics", [])],
+            max_cost_increase=float(payload.get("max_cost_increase", 0.0)),
+            max_risk_level=str(payload.get("max_risk_level", "approval")),
+            preferences=dict(payload.get("preferences", {})),
+        )
+        return OptimizationGoalStore(active_db_path).save(profile).model_dump(mode="json")
+
+    @app.get("/api/evidence/goals/{scenario_id}")
+    def get_evidence_goal(scenario_id: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        profile = OptimizationGoalStore(active_db_path).get(scenario_id)
+        if profile is None:
+            raise HTTPException(
+                status_code=404,
+                detail=_api_error("evidence.goal_not_found", "Optimization goal profile not found.", {"scenario_id": scenario_id}),
+            )
+        return profile.model_dump(mode="json")
+
+    @app.get("/api/evidence/decision-memory/{scenario_id}")
+    def evidence_decision_memory(scenario_id: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        return HumanDecisionMemory(active_db_path).summarize(scenario_id).model_dump(mode="json")
+
+    @app.post("/api/evidence/shadow-queue")
+    def enqueue_evidence_shadow(payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        item = ShadowReplayItem.model_validate(payload)
+        ShadowReplayQueueStore(active_db_path).enqueue(item)
+        return item.model_dump(mode="json")
+
+    @app.get("/api/evidence/shadow-queue")
+    def list_evidence_shadow_queue(
+        scenario_id: str | None = None,
+        status: str | None = None,
+        _auth: None = Depends(require_auth),
+    ) -> list[dict[str, Any]]:
+        return [
+            item.model_dump(mode="json")
+            for item in ShadowReplayQueueStore(active_db_path).list(scenario_id=scenario_id, status=status)
+        ]
 
     @app.post("/api/evidence/workflows/{workflow_id}/baseline")
     def set_evidence_baseline(
@@ -308,6 +496,50 @@ def create_app(
                 status_code=404,
                 detail=_api_error("evidence.run_not_found", str(exc), {}),
             ) from None
+
+    @app.post("/api/evidence/compare/export")
+    def export_evidence_comparison(
+        payload: dict[str, Any],
+        _auth: None = Depends(require_auth),
+    ) -> dict[str, str]:
+        try:
+            baseline_run_id = str(payload["baseline_run_id"])
+            candidate_run_id = str(payload["candidate_run_id"])
+        except KeyError as exc:
+            missing = str(exc).strip("'")
+            raise HTTPException(
+                status_code=400,
+                detail=_api_error("evidence.compare_missing_field", "Missing comparison field.", {"field": missing}),
+            ) from None
+        try:
+            return {
+                "report": EvidenceHarness(active_db_path).export_comparison_markdown(
+                    baseline_run_id=baseline_run_id,
+                    candidate_run_id=candidate_run_id,
+                )
+            }
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=_api_error("evidence.run_not_found", str(exc), {}),
+            ) from None
+
+    @app.post("/api/evidence/metrics/{scenario_id}")
+    def save_evidence_metric_mapping(
+        scenario_id: str,
+        payload: list[dict[str, Any]],
+        _auth: None = Depends(require_auth),
+    ) -> dict[str, Any]:
+        schemas = [MetricSchema.model_validate(item) for item in payload]
+        MetricSchemaStore(active_db_path).save_for_scenario(scenario_id, schemas)
+        return {"scenario_id": scenario_id, "saved": len(schemas)}
+
+    @app.get("/api/evidence/metrics/{scenario_id}")
+    def list_evidence_metric_mapping(scenario_id: str, _auth: None = Depends(require_auth)) -> list[dict[str, Any]]:
+        return [
+            schema.model_dump(mode="json")
+            for schema in MetricSchemaStore(active_db_path).list_for_scenario(scenario_id)
+        ]
 
     @app.post("/api/evidence/proposals")
     def create_evidence_proposal(
@@ -956,9 +1188,27 @@ def _fallback_app(loop_harness: LoopHarness, auth: BearerTokenAuth) -> FallbackA
             {"method": "GET", "path": "/api/evidence/runs/{run_id}"},
             {"method": "GET", "path": "/api/evidence/runs/{run_id}/visualization"},
             {"method": "GET", "path": "/api/evidence/runs/{run_id}/report"},
+            {"method": "GET", "path": "/api/evidence/runs/{run_id}/graph"},
+            {"method": "GET", "path": "/api/evidence/runs/{run_id}/gaps"},
+            {"method": "GET", "path": "/api/evidence/runs/{run_id}/nodes/{node_id}"},
+            {"method": "GET", "path": "/api/evidence/workflows/{workflow_id}/map"},
+            {"method": "GET", "path": "/api/evidence/workflows/{workflow_id}/graph"},
+            {"method": "GET", "path": "/api/evidence/workflows/{workflow_id}/charts/optimization"},
+            {"method": "POST", "path": "/api/evidence/charts/optimization"},
+            {"method": "POST", "path": "/api/evidence/import/quant-csv"},
             {"method": "POST", "path": "/api/evidence/workflows/{workflow_id}/baseline"},
             {"method": "GET", "path": "/api/evidence/workflows/{workflow_id}/baseline"},
+            {"method": "POST", "path": "/api/evidence/contracts/validate"},
+            {"method": "POST", "path": "/api/evidence/boundary/classify"},
+            {"method": "POST", "path": "/api/evidence/goals/{scenario_id}"},
+            {"method": "GET", "path": "/api/evidence/goals/{scenario_id}"},
+            {"method": "GET", "path": "/api/evidence/decision-memory/{scenario_id}"},
+            {"method": "POST", "path": "/api/evidence/shadow-queue"},
+            {"method": "GET", "path": "/api/evidence/shadow-queue"},
             {"method": "POST", "path": "/api/evidence/compare"},
+            {"method": "POST", "path": "/api/evidence/compare/export"},
+            {"method": "POST", "path": "/api/evidence/metrics/{scenario_id}"},
+            {"method": "GET", "path": "/api/evidence/metrics/{scenario_id}"},
             {"method": "GET", "path": "/api/console/snapshot"},
             {"method": "GET", "path": "/api/approvals"},
             {"method": "GET", "path": "/api/runs"},

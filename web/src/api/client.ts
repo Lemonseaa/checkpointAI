@@ -12,9 +12,14 @@ import type {
   EvidenceReport,
   EvidenceBaseline,
   EvidenceProposal,
+  EvidenceGapReport,
   ExternalAgentConnection,
   HealthReport,
   LearningObservation,
+  DecisionMemorySummary,
+  NodeEvidenceDetail,
+  OptimizationChartPayload,
+  OptimizationGoalProfile,
   ProcessAutonomyActionResult,
   ReportResponse,
   RestoreResult,
@@ -29,6 +34,8 @@ import type {
   UserProfilePayload,
   ValidationSummary,
   StoredEvidenceRun,
+  WorkflowGraphPayload,
+  WorkflowMapSummary,
   WorkflowVisualization
 } from "../types/api";
 
@@ -134,6 +141,61 @@ export async function getEvidenceVisualization(runId: string) {
 
 export async function getEvidenceReport(runId: string) {
   const response = await api.get<EvidenceReport>(`/api/evidence/runs/${runId}/report`);
+  return response.data;
+}
+
+export async function getWorkflowMap(workflowId: string) {
+  const response = await api.get<WorkflowMapSummary>(`/api/evidence/workflows/${workflowId}/map`);
+  return response.data;
+}
+
+export async function getWorkflowGraph(workflowId: string) {
+  const response = await api.get<WorkflowGraphPayload>(`/api/evidence/workflows/${workflowId}/graph`);
+  return response.data;
+}
+
+export async function getRunGraph(runId: string) {
+  const response = await api.get<WorkflowGraphPayload>(`/api/evidence/runs/${runId}/graph`);
+  return response.data;
+}
+
+export async function getOptimizationChart(workflowId: string) {
+  const response = await api.get<OptimizationChartPayload>(
+    `/api/evidence/workflows/${workflowId}/charts/optimization`
+  );
+  return response.data;
+}
+
+export async function buildOptimizationChart(baselineRunId: string, candidateRunIds: string[]) {
+  const response = await api.post<OptimizationChartPayload>("/api/evidence/charts/optimization", {
+    baseline_run_id: baselineRunId,
+    candidate_run_ids: candidateRunIds
+  });
+  return response.data;
+}
+
+export async function getEvidenceGapReport(runId: string) {
+  const response = await api.get<EvidenceGapReport>(`/api/evidence/runs/${runId}/gaps`);
+  return response.data;
+}
+
+export async function getNodeEvidenceDetail(runId: string, nodeId: string) {
+  const response = await api.get<NodeEvidenceDetail>(`/api/evidence/runs/${runId}/nodes/${nodeId}`);
+  return response.data;
+}
+
+export async function getOptimizationGoal(scenarioId: string) {
+  const response = await api.get<OptimizationGoalProfile>(`/api/evidence/goals/${scenarioId}`);
+  return response.data;
+}
+
+export async function saveOptimizationGoal(scenarioId: string, payload: Omit<OptimizationGoalProfile, "scenario_id">) {
+  const response = await api.post<OptimizationGoalProfile>(`/api/evidence/goals/${scenarioId}`, payload);
+  return response.data;
+}
+
+export async function getDecisionMemory(scenarioId: string) {
+  const response = await api.get<DecisionMemorySummary>(`/api/evidence/decision-memory/${scenarioId}`);
   return response.data;
 }
 

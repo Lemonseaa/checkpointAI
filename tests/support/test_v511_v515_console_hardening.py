@@ -52,7 +52,7 @@ class V511V515ConsoleHardeningTest(unittest.TestCase):
             shadow_detail = client.get(f"/api/shadows/{shadow_run.json()['id']}", headers=headers)
 
         self.assertEqual(version.status_code, 200)
-        self.assertEqual(version.json()["name"], "LoopHarness")
+        self.assertEqual(version.json()["name"], "Loop Harness")
         self.assertEqual(auth.status_code, 200)
         self.assertTrue(auth.json()["authenticated"])
         self.assertEqual(latest_report.status_code, 200)

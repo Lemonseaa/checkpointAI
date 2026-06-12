@@ -1,0 +1,64 @@
+{
+  "workflow_id": "content_growth_demo",
+  "run_id": "content_baseline_001",
+  "scenario_id": "content",
+  "run_kind": "historical",
+  "nodes": [
+    { "id": "research", "name": "Research Topic", "type": "agent", "metadata": { "optimizable": true } },
+    { "id": "draft", "name": "Draft Post", "type": "agent", "metadata": { "optimizable": true } },
+    { "id": "review", "name": "Human Review", "type": "human" },
+    { "id": "publish", "name": "Publish", "type": "external", "metadata": { "black_box": true } }
+  ],
+  "edges": [
+    { "source": "research", "target": "draft" },
+    { "source": "draft", "target": "review" },
+    { "source": "review", "target": "publish" }
+  ],
+  "trace": [
+    {
+      "node_id": "research",
+      "status": "succeeded",
+      "duration_ms": 480,
+      "cost": 0.03,
+      "input_summary": "initial content direction",
+      "output_summary": "topic angle selected",
+      "metrics": { "topic_fit": 0.62 }
+    },
+    {
+      "node_id": "draft",
+      "status": "succeeded",
+      "duration_ms": 860,
+      "cost": 0.08,
+      "input_summary": "topic angle",
+      "output_summary": "short post draft",
+      "metrics": { "hook_score": 0.58 }
+    },
+    {
+      "node_id": "review",
+      "status": "succeeded",
+      "duration_ms": 300,
+      "input_summary": "draft post",
+      "output_summary": "approved with edits",
+      "metrics": { "brand_fit": 0.7 }
+    }
+  ],
+  "metrics": {
+    "engagement_rate": 0.041,
+    "save_rate": 0.012,
+    "follower_gain": 16,
+    "brand_fit": 0.7,
+    "latency_ms": 1640,
+    "sample_count": 12
+  },
+  "metric_schema": {
+    "engagement_rate": { "direction": "higher", "category": "business", "weight": 0.4 },
+    "save_rate": { "direction": "higher", "category": "business", "weight": 0.25 },
+    "follower_gain": { "direction": "higher", "category": "business", "weight": 0.25 },
+    "brand_fit": { "direction": "higher", "category": "guardrail", "weight": 0.1, "threshold": 0.65, "is_guardrail": true },
+    "latency_ms": { "direction": "lower", "category": "system", "weight": 0.0 },
+    "sample_count": { "direction": "higher", "category": "data_quality", "weight": 0.0 }
+  },
+  "config": { "hook_style": "educational", "post_length": "medium" },
+  "artifacts": [{ "type": "json", "path": "examples/evidence/content_baseline_run.json" }],
+  "metadata": { "data_source": "content_fixture" }
+}

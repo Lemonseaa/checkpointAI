@@ -1,13 +1,13 @@
-# LoopHarness Strategic Reset Plan
+# Loop Harness Strategic Reset Plan
 
 ## Why Reset
 
-LoopHarness 过去 V1-V7 证明了很多能力，也暴露了一个问题：继续做通用 Agent 平台、Workflow Engine、插件生态、模型操作台，会和成熟项目重复。
+Loop Harness 过去 V1-V7 证明了很多能力，也暴露了一个问题：继续做通用 Agent 平台、Workflow Engine、插件生态、模型操作台，会和成熟项目重复。
 
 新的方向不是推倒重来，而是收缩：
 
 ```text
-LoopHarness = External Workflow Evidence Harness
+Loop Harness = External Workflow Evidence Harness
 ```
 
 也就是给外部工作流加一层证据、可视化诊断、验证、审批和回滚能力。
@@ -16,7 +16,7 @@ LoopHarness = External Workflow Evidence Harness
 
 ## New Positioning
 
-LoopHarness 不再定位为：
+Loop Harness 不再定位为：
 
 ```text
 Multi-Agent OS
@@ -27,7 +27,7 @@ Plugin Marketplace
 TradingAgents / Dify / Nexent 替代品
 ```
 
-LoopHarness 只做：
+Loop Harness 只做：
 
 ```text
 External Workflow

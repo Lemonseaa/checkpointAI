@@ -149,9 +149,71 @@ class V58WebApiTest(unittest.TestCase):
             detail = client.get("/api/evidence/runs/candidate", headers=headers)
             visualization = client.get("/api/evidence/runs/candidate/visualization", headers=headers)
             report = client.get("/api/evidence/runs/candidate/report", headers=headers)
+            workflow_map = client.get("/api/evidence/workflows/quant_backtest_v1/map", headers=headers)
+            workflow_graph = client.get("/api/evidence/workflows/quant_backtest_v1/graph", headers=headers)
+            run_graph = client.get("/api/evidence/runs/candidate/graph", headers=headers)
+            gap_report = client.get("/api/evidence/runs/candidate/gaps", headers=headers)
+            node_detail = client.get("/api/evidence/runs/candidate/nodes/strategy", headers=headers)
+            goal_saved = client.post(
+                "/api/evidence/goals/quant",
+                json={
+                    "primary_metrics": ["sharpe"],
+                    "guardrail_metrics": ["max_drawdown"],
+                    "max_cost_increase": 0.1,
+                    "max_risk_level": "approval",
+                    "preferences": {"trading_frequency": "low"},
+                },
+                headers=headers,
+            )
+            goal_loaded = client.get("/api/evidence/goals/quant", headers=headers)
+            metric_schema_save = client.post(
+                "/api/evidence/metrics/quant",
+                json=[
+                    {"name": "sharpe", "direction": "higher", "category": "business", "weight": 0.7},
+                    {
+                        "name": "max_drawdown",
+                        "direction": "lower",
+                        "category": "guardrail",
+                        "weight": 0.3,
+                        "threshold": 0.2,
+                        "is_guardrail": True,
+                    },
+                ],
+                headers=headers,
+            )
+            metric_schema_list = client.get("/api/evidence/metrics/quant", headers=headers)
+            contract = client.post(
+                "/api/evidence/contracts/validate",
+                json=self._evidence_payload("contract-check", 1.0),
+                headers=headers,
+            )
             missing = client.get("/api/evidence/runs/missing-run", headers=headers)
             comparison = client.post(
                 "/api/evidence/compare",
+                json={"baseline_run_id": "baseline", "candidate_run_id": "candidate"},
+                headers=headers,
+            )
+            workflow_chart = client.get(
+                "/api/evidence/workflows/quant_backtest_v1/charts/optimization",
+                headers=headers,
+            )
+            explicit_chart = client.post(
+                "/api/evidence/charts/optimization",
+                json={"baseline_run_id": "baseline", "candidate_run_ids": ["candidate"]},
+                headers=headers,
+            )
+            csv_import = client.post(
+                "/api/evidence/import/quant-csv",
+                json={
+                    "path": str(Path(__file__).resolve().parents[1] / "fixtures" / "quant_backtest_results.csv"),
+                    "workflow_id": "csv_quant_workflow",
+                    "scenario_id": "quant",
+                    "run_kind": "historical",
+                },
+                headers=headers,
+            )
+            comparison_export = client.post(
+                "/api/evidence/compare/export",
                 json={"baseline_run_id": "baseline", "candidate_run_id": "candidate"},
                 headers=headers,
             )
@@ -169,10 +231,37 @@ class V58WebApiTest(unittest.TestCase):
         self.assertEqual(visualization.json()["run_id"], "candidate")
         self.assertEqual(report.status_code, 200)
         self.assertEqual(report.json()["run_id"], "candidate")
+        self.assertEqual(workflow_map.status_code, 200)
+        self.assertEqual(workflow_map.json()["latest_run_id"], "candidate")
+        self.assertEqual(workflow_graph.status_code, 200)
+        self.assertEqual(workflow_graph.json()["run_id"], "candidate")
+        self.assertEqual(run_graph.status_code, 200)
+        self.assertEqual(run_graph.json()["workflow_id"], "quant_backtest_v1")
+        self.assertIn("metric_sources", run_graph.json())
+        self.assertEqual(gap_report.status_code, 200)
+        self.assertIn("summary", gap_report.json())
+        self.assertEqual(node_detail.status_code, 200)
+        self.assertEqual(node_detail.json()["node_id"], "strategy")
+        self.assertEqual(goal_saved.status_code, 200)
+        self.assertEqual(goal_loaded.json()["primary_metrics"], ["sharpe"])
+        self.assertEqual(metric_schema_save.status_code, 200)
+        self.assertEqual(metric_schema_list.status_code, 200)
+        self.assertEqual(metric_schema_list.json()[0]["name"], "max_drawdown")
+        self.assertEqual(contract.status_code, 200)
+        self.assertEqual(contract.json()["status"], "valid")
         self.assertEqual(missing.status_code, 404)
         self.assertEqual(missing.json()["code"], "evidence.run_not_found")
         self.assertEqual(comparison.status_code, 200)
         self.assertEqual(comparison.json()["recommendation"], "approve")
+        self.assertEqual(workflow_chart.status_code, 200)
+        self.assertEqual(workflow_chart.json()["baseline_run_id"], "baseline")
+        self.assertEqual(explicit_chart.status_code, 200)
+        self.assertEqual(explicit_chart.json()["candidate_points"][0]["run_id"], "candidate")
+        self.assertEqual(csv_import.status_code, 200)
+        self.assertEqual(csv_import.json()["imported_count"], 3)
+        self.assertEqual(comparison_export.status_code, 200)
+        self.assertIn("Baseline vs Candidate", comparison_export.json()["report"])
+        self.assertIn("candidate", comparison_export.json()["report"])
 
     def test_fallback_routes_include_console_api_contract(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -189,6 +278,11 @@ class V58WebApiTest(unittest.TestCase):
         self.assertIn("/api/console/snapshot", paths)
         self.assertIn("/api/evidence/runs", paths)
         self.assertIn("/api/evidence/runs/{run_id}", paths)
+        self.assertIn("/api/evidence/runs/{run_id}/graph", paths)
+        self.assertIn("/api/evidence/workflows/{workflow_id}/graph", paths)
+        self.assertIn("/api/evidence/workflows/{workflow_id}/charts/optimization", paths)
+        self.assertIn("/api/evidence/charts/optimization", paths)
+        self.assertIn("/api/evidence/import/quant-csv", paths)
         self.assertIn("/api/evidence/compare", paths)
         self.assertIn("/api/approvals", paths)
         self.assertIn("/api/backups", paths)

@@ -23,9 +23,18 @@ New UI work should start from the Evidence Harness API:
 ```text
 POST /api/evidence/runs
 GET  /api/evidence/runs?workflow_id=...
+GET  /api/evidence/workflows/{workflow_id}/map
+GET  /api/evidence/workflows/{workflow_id}/graph
+GET  /api/evidence/workflows/{workflow_id}/charts/optimization
 GET  /api/evidence/runs/{run_id}/visualization
+GET  /api/evidence/runs/{run_id}/graph
 GET  /api/evidence/runs/{run_id}/report
+GET  /api/evidence/runs/{run_id}/gaps
+GET  /api/evidence/runs/{run_id}/nodes/{node_id}
 POST /api/evidence/compare
+POST /api/evidence/compare/export
+POST /api/evidence/charts/optimization
+POST /api/evidence/import/quant-csv
 ```
 
 Older `/api/runs` and scenario adapter routes are compatibility/control-console paths.
@@ -65,6 +74,25 @@ The UI may render simple bars before introducing a charting library.
 The important rule is that the human can see whether the candidate improved,
 what got worse, and whether the evidence is clean enough to trust.
 
+## Visual Proof Before Optimization
+
+When metrics exist, every claimed improvement should have a chartable before
+and after view. The console should show at least:
+
+```text
+baseline run
+candidate runs
+best candidate marker
+business metric movement
+guardrail violations
+weak candidates
+current run highlight
+```
+
+This rule prevents the system from showing only successful examples. A useful
+optimization console must make bad candidates visible too, especially candidates
+that improve one metric while violating risk boundaries.
+
 ## Workflow Visualization View
 
 Workflow visualization is an observability surface.
@@ -81,12 +109,17 @@ Black-box nodes
 Error nodes
 Node latency
 Node cost
+Input/output summary
+Optimization eligibility
 Next action summary
 Pinned baseline marker
 ```
 
-The first version should use deterministic HTML cards and arrows.
-Graph libraries are optional later, after the evidence contract is stable.
+The current graph payload is deterministic and UI-ready. It includes layout,
+filters, metric sources, gap markers, optimization eligibility, and proposal
+targeting metadata. Graph libraries are optional; the product requirement is
+that the human can see which part of the workflow produced evidence and which
+part remains a black box.
 
 ## Approval Bridge
 

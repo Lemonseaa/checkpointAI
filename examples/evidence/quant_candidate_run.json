@@ -1,6 +1,7 @@
 {
   "workflow_id": "quant_backtest_v1",
   "run_id": "quant_candidate_001",
+  "scenario_id": "quant",
   "run_kind": "historical",
   "started_at": "2026-06-11T11:00:00Z",
   "finished_at": "2026-06-11T11:03:00Z",

@@ -109,6 +109,154 @@ export type WorkflowVisualization = {
   node_latencies_ms: Record<string, number>;
 };
 
+export type WorkflowMapSummary = {
+  workflow_id: string;
+  scenario_id: string;
+  latest_run_id: string;
+  node_count: number;
+  edge_count: number;
+  entry_node_ids: string[];
+  exit_node_ids: string[];
+  observable_node_ids: string[];
+  metric_node_ids: string[];
+  black_box_node_ids: string[];
+  error_node_ids: string[];
+  config_surfaces: string[];
+  trace_coverage: number;
+  metric_coverage: number;
+  value_summary: string;
+};
+
+export type WorkflowGraphNode = {
+  id: string;
+  label: string;
+  node_type: string;
+  status: string;
+  layout: { x: number; y: number };
+  metric_names: string[];
+  artifact_refs: Array<Record<string, unknown>>;
+  black_box: boolean;
+  error: boolean;
+  high_cost: boolean;
+  high_latency: boolean;
+  optimizable: boolean;
+  gaps: EvidenceGap[];
+  metadata: Record<string, unknown>;
+};
+
+export type WorkflowGraphEdge = {
+  source: string;
+  target: string;
+  edge_type: string;
+  active: boolean;
+  metadata: Record<string, unknown>;
+};
+
+export type WorkflowGraphPayload = {
+  workflow_id: string;
+  run_id: string;
+  scenario_id: string;
+  nodes: WorkflowGraphNode[];
+  edges: WorkflowGraphEdge[];
+  run_path: string[];
+  metric_sources: Record<string, string[]>;
+  filters: Record<string, string[]>;
+  legend: Record<string, string>;
+  summary: string;
+};
+
+export type CandidateChartPoint = {
+  run_id: string;
+  scenario_id: string;
+  run_kind: string;
+  total_return?: number | null;
+  sharpe?: number | null;
+  max_drawdown?: number | null;
+  win_rate?: number | null;
+  turnover?: number | null;
+  objective_score?: number | null;
+  guardrail_status: string;
+  candidate_quality: string;
+  best_candidate: boolean;
+  summary: string;
+  metadata: Record<string, unknown>;
+};
+
+export type MetricTrendPoint = {
+  run_id: string;
+  metric: string;
+  value: number;
+  role: string;
+};
+
+export type OptimizationChartPayload = {
+  workflow_id: string;
+  scenario_id: string;
+  baseline_run_id: string;
+  baseline_metrics: Record<string, number>;
+  candidate_points: CandidateChartPoint[];
+  metric_trends: MetricTrendPoint[];
+  chart_fields: string[];
+  guardrail_summary: string;
+  best_candidate_run_id?: string | null;
+  summary: string;
+};
+
+export type NodeEvidenceDetail = {
+  workflow_id: string;
+  run_id: string;
+  node_id: string;
+  name?: string | null;
+  type: string;
+  status: string;
+  input_summary?: string | null;
+  output_summary?: string | null;
+  metrics: Record<string, number>;
+  latency_ms?: number | null;
+  cost?: number | null;
+  error?: string | null;
+  black_box: boolean;
+  optimizable: boolean;
+  metadata: Record<string, unknown>;
+};
+
+export type EvidenceGap = {
+  code: string;
+  severity: string;
+  message: string;
+  node_id?: string | null;
+  details: Record<string, unknown>;
+};
+
+export type EvidenceGapReport = {
+  workflow_id: string;
+  run_id: string;
+  status: string;
+  gaps: EvidenceGap[];
+  black_box_node_ids: string[];
+  missing_metric_node_ids: string[];
+  missing_trace_node_ids: string[];
+  summary: string;
+};
+
+export type OptimizationGoalProfile = {
+  scenario_id: string;
+  primary_metrics: string[];
+  guardrail_metrics: string[];
+  max_cost_increase: number;
+  max_risk_level: string;
+  preferences: Record<string, unknown>;
+};
+
+export type DecisionMemorySummary = {
+  scenario_id: string;
+  approved_count: number;
+  rejected_count: number;
+  approved_patterns: string[];
+  rejected_patterns: string[];
+  summary: string;
+};
+
 export type EvidenceReport = {
   workflow_id: string;
   run_id?: string | null;
@@ -155,6 +303,7 @@ export type ComparisonResult = {
 export type EvidenceRun = {
   workflow_id: string;
   run_id: string;
+  scenario_id: string;
   run_kind: string;
   metrics: Record<string, number>;
   metadata: Record<string, unknown>;

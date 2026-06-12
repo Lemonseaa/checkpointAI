@@ -86,6 +86,7 @@ class ExternalWorkflowRun(BaseModel):
 
     workflow_id: str
     run_id: str
+    scenario_id: str = "default"
     run_kind: EvidenceRunKind = EvidenceRunKind.SYNTHETIC
     started_at: str | None = None
     finished_at: str | None = None

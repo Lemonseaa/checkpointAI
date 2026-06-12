@@ -3,16 +3,25 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
-from loop_harness.evidence import (
+ROOT = next(
+    parent
+    for parent in Path(__file__).resolve().parents
+    if (parent / "pyproject.toml").exists() and (parent / "loop_harness").is_dir()
+)
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from loop_harness.evidence import (  # noqa: E402
     EvidenceBaselineStore,
     EvidenceService,
     EvidenceStore,
     QuantDrillResult,
     QuantDrillRunner,
 )
-from loop_harness.prompt import (
+from loop_harness.prompt import (  # noqa: E402
     Proposal,
     ProposalKind,
     ProposalPatch,

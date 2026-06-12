@@ -4,8 +4,14 @@ import { Link } from "react-router-dom";
 import {
   compareEvidenceRuns,
   createEvidenceProposal,
+  getDecisionMemory,
   getApiErrorMessage,
   getEvidenceBaseline,
+  getEvidenceGapReport,
+  getNodeEvidenceDetail,
+  getOptimizationChart,
+  getOptimizationGoal,
+  getRunGraph,
   listEvidenceRuns
 } from "../../api/client";
 import { Card } from "../../components/Card";
@@ -19,6 +25,7 @@ import type { StoredEvidenceRun } from "../../types/api";
 import { EvidenceQualityPanel } from "./EvidenceQualityPanel";
 import { MetricDeltaChart } from "./MetricDeltaChart";
 import { NodeInspector } from "./NodeInspector";
+import { OptimizationCharts } from "./OptimizationCharts";
 import { WorkflowMap } from "./WorkflowMap";
 
 export function EvidencePage() {
@@ -30,6 +37,7 @@ export function EvidencePage() {
   const runs = evidenceRuns.data ?? [];
   const selected = runs.find((item) => item.run.run_id === selectedRunId) ?? runs[0];
   const workflowId = selected?.run.workflow_id || runs[0]?.run.workflow_id || "";
+  const scenarioId = selected?.run.scenario_id || "default";
   const baseline = useQuery({
     queryKey: ["evidence-baseline", workflowId],
     queryFn: () => getEvidenceBaseline(workflowId),
@@ -48,6 +56,42 @@ export function EvidencePage() {
   });
   const createProposal = useMutation({
     mutationFn: () => createEvidenceProposal(baselineValue, candidateValue, "quant")
+  });
+  const nodeDetail = useQuery({
+    queryKey: ["evidence-node", selected?.run.run_id, activeNodeId],
+    queryFn: () => getNodeEvidenceDetail(selected?.run.run_id ?? "", activeNodeId),
+    enabled: Boolean(selected?.run.run_id && activeNodeId),
+    retry: false
+  });
+  const gapReport = useQuery({
+    queryKey: ["evidence-gaps", selected?.run.run_id],
+    queryFn: () => getEvidenceGapReport(selected?.run.run_id ?? ""),
+    enabled: Boolean(selected?.run.run_id),
+    retry: false
+  });
+  const workflowGraph = useQuery({
+    queryKey: ["evidence-run-graph", selected?.run.run_id],
+    queryFn: () => getRunGraph(selected?.run.run_id ?? ""),
+    enabled: Boolean(selected?.run.run_id),
+    retry: false
+  });
+  const optimizationChart = useQuery({
+    queryKey: ["optimization-chart", workflowId],
+    queryFn: () => getOptimizationChart(workflowId),
+    enabled: Boolean(workflowId),
+    retry: false
+  });
+  const goal = useQuery({
+    queryKey: ["optimization-goal", scenarioId],
+    queryFn: () => getOptimizationGoal(scenarioId),
+    enabled: Boolean(selected?.run.scenario_id),
+    retry: false
+  });
+  const decisionMemory = useQuery({
+    queryKey: ["decision-memory", scenarioId],
+    queryFn: () => getDecisionMemory(scenarioId),
+    enabled: Boolean(selected?.run.scenario_id),
+    retry: false
   });
   const actionItems = getActionItems(compare.data?.recommendation ?? selected?.report.recommendation, {
     blackBoxCount: compare.data?.black_box_node_ids.length ?? selected?.visualization.black_box_node_ids.length ?? 0,
@@ -144,6 +188,7 @@ export function EvidencePage() {
           {selected ? (
             <WorkflowMap
               visualization={selected.visualization}
+              graph={workflowGraph.data}
               selectedNodeId={activeNodeId}
               onSelectNode={setSelectedNodeId}
             />
@@ -153,9 +198,15 @@ export function EvidencePage() {
         </Card>
       </div>
 
+      <div className="mt-5">
+        <Card title="Optimization Charts">
+          <OptimizationCharts chart={optimizationChart.data} highlightedRunId={selected?.run.run_id} />
+        </Card>
+      </div>
+
       <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_440px]">
         <Card title="Node Evidence">
-          <NodeInspector visualization={selected?.visualization} nodeId={activeNodeId} />
+          <NodeInspector visualization={selected?.visualization} detail={nodeDetail.data} nodeId={activeNodeId} />
         </Card>
 
         <div className="space-y-5">
@@ -176,6 +227,35 @@ export function EvidencePage() {
             )}
           </Card>
         </div>
+      </div>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-3">
+        <Card title="Evidence Gaps">
+          <p className="text-sm text-ink">{gapReport.data?.summary ?? "Gap report unavailable."}</p>
+          <div className="mt-3 space-y-2 text-xs text-muted">
+            {(gapReport.data?.gaps ?? []).slice(0, 4).map((gap) => (
+              <div key={`${gap.code}-${gap.node_id ?? gap.message}`} className="rounded border border-border p-2">
+                <span className="font-medium text-ink">{gap.severity}</span> / {gap.code}: {gap.message}
+              </div>
+            ))}
+          </div>
+        </Card>
+        <Card title="Optimization Goal">
+          {goal.data ? (
+            <div className="space-y-2 text-sm">
+              <div>Primary: {goal.data.primary_metrics.join(", ") || "-"}</div>
+              <div>Guardrails: {goal.data.guardrail_metrics.join(", ") || "-"}</div>
+              <div>Risk level: {goal.data.max_risk_level}</div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted">No human-owned optimization goal profile is configured.</p>
+          )}
+        </Card>
+        <Card title="Decision Memory">
+          <p className="text-sm text-ink">
+            {decisionMemory.data?.summary ?? "No decision memory has been recorded for this scenario yet."}
+          </p>
+        </Card>
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_440px]">

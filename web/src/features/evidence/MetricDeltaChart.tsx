@@ -18,8 +18,20 @@ export function MetricDeltaChart({ report }: MetricDeltaChartProps) {
     return <p className="text-sm text-muted">Run a comparison to see metric deltas.</p>;
   }
 
+  const businessRows = rows.filter((row) => row.category === "business");
+  const improvedBusinessMetrics = businessRows.filter((row) => row.value > 0).length;
+  const worsenedBusinessMetrics = businessRows.filter((row) => row.value < 0).length;
+  const systemRows = rows.filter((row) => row.category === "system");
+
   return (
     <div className="space-y-3">
+      <div className="rounded-md border border-border bg-panel px-3 py-2 text-sm text-ink">
+        <div className="font-semibold">Impact Summary</div>
+        <div className="mt-1 text-xs text-muted">
+          Business metrics improved: {improvedBusinessMetrics}; worsened: {worsenedBusinessMetrics}; system metrics
+          tracked: {systemRows.length}.
+        </div>
+      </div>
       {rows.map((row) => {
         const width = `${Math.max(6, (Math.abs(row.value) / maxAbsDelta) * 100)}%`;
         const color = row.value > 0 ? "bg-emerald-500" : row.value < 0 ? "bg-red-500" : "bg-slate-400";

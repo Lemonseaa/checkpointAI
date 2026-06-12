@@ -1,4 +1,4 @@
-# LoopHarness Docs
+# Loop Harness Docs
 
 This directory is organized by responsibility, not by historical version.
 
@@ -11,7 +11,7 @@ This directory is organized by responsibility, not by historical version.
 ## Document Groups
 
 ```text
-core_innovation/   LoopHarness's own differentiating system design.
+core_innovation/   Loop Harness's own differentiating system design.
 borrowed_wheels/   Mature external projects and replacement strategy.
 business_lines/    Business-specific applications and drills.
 deployment/        Deployment and operations notes.
@@ -36,6 +36,6 @@ scripts/business_lines/quant/  Quant business-line scripts.
 
 ## Rule
 
-If a document describes what makes LoopHarness different, put it in `core_innovation/`.
+If a document describes what makes Loop Harness different, put it in `core_innovation/`.
 If it describes external tools we borrow, learn from, or use to replace old code, put it in `borrowed_wheels/`.
 If it describes quant, media, OPC demo, or another concrete domain, put it in `business_lines/`.

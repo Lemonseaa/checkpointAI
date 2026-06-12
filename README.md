@@ -1,17 +1,42 @@
 # Loop Harness
 
-**External Workflow Evidence Harness**
+**Evidence-driven control layer for external AI workflows**
 
 [![Tests](https://img.shields.io/badge/tests-264%20passed-brightgreen)](https://github.com/Lemonseaa/loop-harness)
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/license-Non--Commercial-red)](LICENSE)
 
-Loop Harness is an evidence harness for external workflows.
+Loop Harness connects to external Agent teams, automation workflows, and business processes, then turns their runs and changes into evidence humans can inspect, compare, approve, reject, or roll back.
 
-It connects to external Agent teams, automation workflows, and business processes, then turns their runs and changes into observable, visualizable, comparable, reviewable, and reversible evidence.
+It is not a low-code workflow builder, Agent runtime replacement, Dify clone, Nexent clone, or TradingAgents clone. Its job is narrower and more valuable: **prove whether a workflow change actually improved outcomes.**
 
-It is not a low-code workflow builder, Agent runtime replacement, Dify clone, Nexent clone, or TradingAgents clone. Its job is to judge whether workflow changes actually improved outcomes.
+## Why It Exists
+
+AI workflows are easy to build and hard to trust. A workflow can look busy, generate polished output, and still fail to prove that it improved anything.
+
+Loop Harness adds the missing control layer around those workflows:
+
+- **Visualize** what the workflow did.
+- **Measure** whether key metrics changed.
+- **Compare** candidates against baselines.
+- **Gate** weak evidence, high risk, and human methodology mismatches.
+- **Record** decisions and rollback paths.
+
+## Core Flow
+
+```mermaid
+flowchart LR
+    A["External Workflow<br/>Agent team, script, Dify flow, TradingAgents-style team"] --> B["Evidence Adapter"]
+    B --> C["Workflow Contract<br/>nodes, edges, trace, metrics, config, artifacts"]
+    C --> D["Workflow Visualization<br/>paths, black boxes, coverage, cost, latency, errors"]
+    C --> E["Evidence Report"]
+    E --> F["Baseline vs Candidate Compare"]
+    F --> G["Evidence / Risk / Methodology Gates"]
+    G --> H["Proposal"]
+    H --> I["Human Decision<br/>approve, reject, shadow, rollback"]
+    I --> J["Decision Log + Baseline Store"]
+```
 
 ## License
 
@@ -19,11 +44,10 @@ Loop Harness is source-available for non-commercial use. Commercial use requires
 
 Commercial authorization contact: liminxi634@163.com
 
-## Current Direction
+## Positioning
 
 ```text
-Dify = prototype tool / workflow reference / plugin ecosystem reference
-TradingAgents = quant Agent team template / multi-role research workflow reference
+Dify / Nexent / Archon / LangGraph / TradingAgents = workflow execution or workflow templates
 Loop Harness = evidence harness + workflow visualization + review layer + approval layer + rollback layer
 ```
 
@@ -48,6 +72,16 @@ If the answer is yes, Loop Harness is useful.
 - Applies evidence, risk, and methodology gates before approval.
 - Produces evidence reports that support approve / reject / rollback decisions.
 
+## When To Use It
+
+Use Loop Harness when:
+
+- You already have, or plan to build, an external AI workflow.
+- You need to see what happened inside a workflow run.
+- You need baseline-vs-candidate comparisons before accepting changes.
+- You care about evidence quality, risk, rollback, and human decision records.
+- You want to improve quant research, content operations, or other workflows through repeated measurable experiments.
+
 ## What Loop Harness Does Not Do
 
 - It does not provide a drag-and-drop workflow builder.
@@ -58,6 +92,15 @@ If the answer is yes, Loop Harness is useful.
 - It does not automatically deploy live trading, publish content, delete history, or bypass human final control.
 - It does not build a full plugin marketplace or full model provider platform.
 - It does not promise automatic profit, automatic followers, or real learning from tiny samples.
+
+## When Not To Use It
+
+Do not use Loop Harness when:
+
+- You only need a quick prototype workflow.
+- Your workflow cannot expose trace, metrics, or configurable surfaces.
+- You expect automatic trading profit or automatic content growth without enough feedback data.
+- You want a full enterprise orchestration platform.
 
 ## Main Concepts
 

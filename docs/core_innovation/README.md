@@ -1,8 +1,8 @@
 # Core Innovation
 
-This folder contains the parts LoopHarness should own.
+This folder contains the parts Loop Harness should own.
 
-LoopHarness's core innovation is not another Agent runtime. It is the evidence layer around external workflows:
+Loop Harness's core innovation is not another Agent runtime. It is the evidence layer around external workflows:
 
 ```text
 External workflow run
@@ -17,6 +17,7 @@ External workflow run
 ## What Belongs Here
 
 - Evidence Harness design.
+- Workflow contract.
 - Workflow visualization and black-box diagnosis.
 - Impact Console for human evidence review.
 - Metric schema and evidence review.
@@ -33,5 +34,6 @@ External workflow run
 ## Current Files
 
 - [metrics_reference.md](metrics_reference.md): metric direction, category, and comparison reference.
+- [workflow_contract_v1.md](workflow_contract_v1.md): minimum external workflow evidence contract.
 - [impact_console.md](impact_console.md): UI scope and Evidence API boundaries.
 - [user_preference.md](user_preference.md): human-owned methodology, preference, and Hermes draft flow.

@@ -22,9 +22,38 @@ def register_evidence_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     visualize_parser = evidence_subparsers.add_parser("visualize")
     visualize_parser.add_argument("--run", required=True, dest="run_id")
 
+    map_parser = evidence_subparsers.add_parser("map")
+    map_parser.add_argument("--workflow", required=True, dest="workflow_id")
+
+    graph_parser = evidence_subparsers.add_parser("graph")
+    graph_parser.add_argument("--run", dest="run_id")
+    graph_parser.add_argument("--workflow", dest="workflow_id")
+
+    chart_parser = evidence_subparsers.add_parser("chart")
+    chart_parser.add_argument("--workflow", dest="workflow_id")
+    chart_parser.add_argument("--baseline", dest="baseline_run_id")
+    chart_parser.add_argument("--candidate", dest="candidate_run_ids", action="append", default=[])
+
+    import_quant_csv_parser = evidence_subparsers.add_parser("import-quant-csv")
+    import_quant_csv_parser.add_argument("--path", required=True)
+    import_quant_csv_parser.add_argument("--workflow", required=True, dest="workflow_id")
+    import_quant_csv_parser.add_argument("--scenario", default="quant", dest="scenario_id")
+    import_quant_csv_parser.add_argument("--kind", default="historical", dest="run_kind")
+
+    gaps_parser = evidence_subparsers.add_parser("gaps")
+    gaps_parser.add_argument("--run", required=True, dest="run_id")
+
+    node_parser = evidence_subparsers.add_parser("node")
+    node_parser.add_argument("--run", required=True, dest="run_id")
+    node_parser.add_argument("--node", required=True, dest="node_id")
+
     compare_parser = evidence_subparsers.add_parser("compare")
     compare_parser.add_argument("--baseline", required=True)
     compare_parser.add_argument("--candidate", required=True)
+
+    export_parser = evidence_subparsers.add_parser("export")
+    export_parser.add_argument("--baseline", required=True)
+    export_parser.add_argument("--candidate", required=True)
 
     report_parser = evidence_subparsers.add_parser("report")
     report_parser.add_argument("--run", dest="run_id")
@@ -34,6 +63,7 @@ def register_evidence_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     quant_drill_parser = evidence_subparsers.add_parser("quant-drill")
     quant_drill_parser.add_argument("--candidates", type=int, default=30)
     quant_drill_parser.add_argument("--comparisons", type=int, default=5)
+    quant_drill_parser.add_argument("--v2", action="store_true")
 
 
 def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
@@ -65,9 +95,84 @@ def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
         _print_json(visualization.model_dump(mode="json"))
         return 0
 
+    if args.evidence_command == "map":
+        try:
+            workflow_map = harness.workflow_map(args.workflow_id)
+        except ValueError:
+            print(f"Unknown workflow: {args.workflow_id}")
+            return 1
+        _print_json(workflow_map.model_dump(mode="json"))
+        return 0
+
+    if args.evidence_command == "graph":
+        try:
+            if args.run_id:
+                graph = harness.graph_for_run(args.run_id)
+            elif args.workflow_id:
+                graph = harness.graph_for_workflow(args.workflow_id)
+            else:
+                print("graph requires --run or --workflow")
+                return 1
+        except ValueError as exc:
+            print(str(exc))
+            return 1
+        _print_json(graph.model_dump(mode="json"))
+        return 0
+
+    if args.evidence_command == "chart":
+        try:
+            if args.workflow_id:
+                chart = harness.optimization_chart(args.workflow_id)
+            elif args.baseline_run_id and args.candidate_run_ids:
+                chart = harness.optimization_chart_for_runs(args.baseline_run_id, args.candidate_run_ids)
+            else:
+                print("chart requires --workflow or --baseline with at least one --candidate")
+                return 1
+        except ValueError as exc:
+            print(str(exc))
+            return 1
+        _print_json(chart.model_dump(mode="json"))
+        return 0
+
+    if args.evidence_command == "import-quant-csv":
+        try:
+            import_result = harness.ingest_quant_csv(
+                args.path,
+                workflow_id=args.workflow_id,
+                scenario_id=args.scenario_id,
+                run_kind=args.run_kind,
+            )
+        except ValueError as exc:
+            print(str(exc))
+            return 1
+        _print_json(import_result.model_dump(mode="json"))
+        return 0
+
+    if args.evidence_command == "gaps":
+        try:
+            gap_report = harness.gap_report(args.run_id)
+        except ValueError:
+            print(f"Unknown run: {args.run_id}")
+            return 1
+        _print_json(gap_report.model_dump(mode="json"))
+        return 0
+
+    if args.evidence_command == "node":
+        try:
+            detail = harness.node_detail(args.run_id, args.node_id)
+        except ValueError as exc:
+            print(str(exc))
+            return 1
+        _print_json(detail.model_dump(mode="json"))
+        return 0
+
     if args.evidence_command == "compare":
         report = harness.compare(args.baseline, args.candidate)
         _print_json(report.model_dump(mode="json"))
+        return 0
+
+    if args.evidence_command == "export":
+        print(harness.export_comparison_markdown(args.baseline, args.candidate))
         return 0
 
     if args.evidence_command == "report":
@@ -87,10 +192,11 @@ def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
         return 1
 
     if args.evidence_command == "quant-drill":
-        drill_result = QuantDrillRunner(harness.service).run(
+        runner = QuantDrillRunner(harness.service)
+        drill_result = runner.run_v2(
             candidate_count=args.candidates,
             comparison_count=args.comparisons,
-        )
+        ) if args.v2 else runner.run(candidate_count=args.candidates, comparison_count=args.comparisons)
         _print_json(
             {
                 "workflow_id": drill_result.workflow_id,
@@ -105,6 +211,7 @@ def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
                 "system_findings": drill_result.system_findings,
                 "paper_trade_recommendation": drill_result.paper_trade_recommendation,
                 "review": drill_result.review,
+                "chart_payload": drill_result.chart_payload,
                 "summary": drill_result.summary,
             }
         )

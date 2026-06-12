@@ -24,6 +24,7 @@ class QuantDrillResult(BaseModel):
     system_findings: list[str] = Field(default_factory=list)
     paper_trade_recommendation: str
     review: dict[str, Any] = Field(default_factory=dict)
+    chart_payload: dict[str, Any] = Field(default_factory=dict)
     summary: str
 
 
@@ -82,12 +83,53 @@ class QuantDrillRunner:
             system_findings=system_findings,
             paper_trade_recommendation=recommendation,
             review=review,
+            chart_payload=self._chart_payload(self.baseline_run_id, candidate_payloads, comparisons),
             summary=(
                 f"Quant drill created {1 + len(candidate_ids)} historical runs, "
                 f"compared {len(comparisons)} candidates, "
                 f"paper_trade_recommendation={recommendation}."
             ),
         )
+
+    def run_v2(self, candidate_count: int = 30, comparison_count: int = 5) -> QuantDrillResult:
+        """Run an expanded drill with weak and guardrail-violating candidates."""
+
+        if candidate_count < 2:
+            raise ValueError("candidate_count must be at least 2 for run_v2")
+        base_candidate_count = candidate_count - 1
+        result = self.run(
+            candidate_count=base_candidate_count,
+            comparison_count=min(comparison_count, base_candidate_count),
+        )
+        weak_payload = self._payload(
+            run_id="quant_candidate_drill_weak",
+            fast_window=3,
+            slow_window=5,
+            total_return=0.08,
+            sharpe=0.42,
+            max_drawdown=0.28,
+            win_rate=0.42,
+            trade_count=180,
+            turnover=4.2,
+            latency_ms=690,
+            stability_score=0.38,
+        )
+        self.service.ingest_payload(weak_payload)
+        result.candidate_run_ids.append(str(weak_payload["run_id"]))
+        result.candidate_count = len(result.candidate_run_ids)
+        result.run_count = 1 + result.candidate_count
+        candidate_payloads = self._stored_candidate_payloads(result.candidate_run_ids)
+        result.chart_payload = self._chart_payload(result.baseline_run_id, candidate_payloads, result.comparisons)
+        result.review = {
+            **result.review,
+            "guardrail_summary": self._guardrail_summary(result.chart_payload["candidates"]),
+        }
+        result.summary = (
+            f"Quant drill v2 created {result.run_count} historical runs, "
+            f"including weak and guardrail-violating candidates; "
+            f"paper_trade_recommendation={result.paper_trade_recommendation}."
+        )
+        return result
 
     def _candidate_payload(self, index: int) -> dict[str, Any]:
         fast_window = 6 + (index % 12)
@@ -134,6 +176,7 @@ class QuantDrillRunner:
         return {
             "workflow_id": self.workflow_id,
             "run_id": run_id,
+            "scenario_id": "quant",
             "run_kind": "historical",
             "nodes": [
                 {"id": "load_data", "name": "Load market data", "type": "data"},
@@ -302,3 +345,57 @@ class QuantDrillRunner:
             "transaction_cost_bps is fixed at 8; sensitivity analysis is still required",
             "historical fixture covers two years; out-of-sample split should be added before live use",
         ]
+
+    def _stored_candidate_payloads(self, candidate_ids: list[str]) -> list[dict[str, Any]]:
+        payloads: list[dict[str, Any]] = []
+        for candidate_id in candidate_ids:
+            stored = self.service.store.get_run(candidate_id)
+            if stored is not None:
+                payloads.append(stored.run.model_dump(mode="json"))
+        return payloads
+
+    @staticmethod
+    def _chart_payload(
+        baseline_run_id: str,
+        candidate_payloads: list[dict[str, Any]],
+        comparisons: list[EvidenceReport],
+    ) -> dict[str, Any]:
+        compared = {report.candidate_run_id: report for report in comparisons}
+        candidates: list[dict[str, Any]] = []
+        for payload in candidate_payloads:
+            metrics = payload.get("metrics", {})
+            if not isinstance(metrics, dict):
+                continue
+            max_drawdown = float(metrics.get("max_drawdown", 0.0))
+            sharpe = float(metrics.get("sharpe", 0.0))
+            guardrail_status = "violated" if max_drawdown > 0.2 else "ok"
+            candidate_quality = "weak" if sharpe < 0.7 or guardrail_status == "violated" else "candidate"
+            report = compared.get(str(payload.get("run_id")))
+            objective_score = None
+            if report is not None and report.comparison is not None:
+                objective_score = report.comparison.objective_score
+            candidates.append(
+                {
+                    "run_id": str(payload.get("run_id")),
+                    "total_return": float(metrics.get("total_return", 0.0)),
+                    "sharpe": sharpe,
+                    "max_drawdown": max_drawdown,
+                    "win_rate": float(metrics.get("win_rate", 0.0)),
+                    "turnover": float(metrics.get("turnover", 0.0)),
+                    "objective_score": objective_score,
+                    "guardrail_status": guardrail_status,
+                    "candidate_quality": candidate_quality,
+                }
+            )
+        return {
+            "baseline_run_id": baseline_run_id,
+            "candidates": candidates,
+            "chart_fields": ["total_return", "sharpe", "max_drawdown", "objective_score"],
+        }
+
+    @staticmethod
+    def _guardrail_summary(candidates: list[dict[str, Any]]) -> str:
+        violations = [str(item["run_id"]) for item in candidates if item.get("guardrail_status") == "violated"]
+        if not violations:
+            return "No candidate violated max_drawdown guardrail."
+        return f"{len(violations)} candidates violated guardrails: {', '.join(violations[:5])}."

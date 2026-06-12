@@ -7,6 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from loop_harness.evaluation import EvidenceDecision, EvidenceEvaluationEngine
+from loop_harness.evidence.baseline_store import EvidenceBaselineStore
+from loop_harness.evidence.charts import OptimizationChartBuilder, OptimizationChartPayload
+from loop_harness.evidence.contract import WorkflowContractValidator
+from loop_harness.evidence.csv_import import QuantBacktestCSVImporter, QuantCSVImportResult
+from loop_harness.evidence.gap import EvidenceGapReport, build_gap_report
+from loop_harness.evidence.graph import WorkflowGraphBuilder, WorkflowGraphPayload
 from loop_harness.evidence.models import (
     DecisionRecommendation,
     EvidenceReport,
@@ -16,6 +22,12 @@ from loop_harness.evidence.models import (
 )
 from loop_harness.evidence.quality import EvidenceQualityGate
 from loop_harness.evidence.storage import EvidenceStore
+from loop_harness.evidence.workflow_map import (
+    NodeEvidenceDetail,
+    WorkflowMapSummary,
+    build_node_detail,
+    build_workflow_map,
+)
 from loop_harness.metrics import (
     MetricCategory,
     MetricDirection,
@@ -34,17 +46,121 @@ class EvidenceService:
     def ingest_file(self, path: str | Path) -> IngestResult:
         """Load and ingest one external workflow run JSON file."""
 
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        payload = self._load_payload(path)
         return self.ingest_payload(payload)
 
     def ingest_payload(self, payload: dict[str, Any]) -> IngestResult:
         """Normalize one external workflow run payload and persist derived evidence."""
 
+        validation = WorkflowContractValidator().validate(payload)
+        if not validation.accepted:
+            details = "; ".join(issue.message for issue in validation.issues)
+            raise ValueError(f"Workflow contract rejected: {details}")
         run = ExternalWorkflowRun.model_validate(payload)
         visualization = self.build_visualization(run)
         report = self.build_report(run, visualization)
         self.store.save(run, visualization, report)
         return IngestResult(run=run, visualization=visualization, report=report)
+
+    def ingest_quant_csv(
+        self,
+        path: str | Path,
+        *,
+        workflow_id: str,
+        scenario_id: str,
+        run_kind: str,
+    ) -> QuantCSVImportResult:
+        """Import quant backtest CSV rows as evidence runs."""
+
+        payloads = QuantBacktestCSVImporter().load(
+            path,
+            workflow_id=workflow_id,
+            scenario_id=scenario_id,
+            run_kind=run_kind,
+        )
+        run_ids: list[str] = []
+        for payload in payloads:
+            result = self.ingest_payload(payload)
+            run_ids.append(result.run.run_id)
+        return QuantCSVImportResult(
+            workflow_id=workflow_id,
+            scenario_id=scenario_id,
+            run_kind=run_kind,
+            imported_count=len(run_ids),
+            run_ids=run_ids,
+        )
+
+    def workflow_map(self, workflow_id: str) -> WorkflowMapSummary:
+        """Return an aggregated workflow map for one workflow."""
+
+        return build_workflow_map(self.store.list_runs(workflow_id=workflow_id), workflow_id)
+
+    def gap_report(self, run_id: str) -> EvidenceGapReport:
+        """Return evidence gaps for one run."""
+
+        stored = self.store.get_run(run_id)
+        if stored is None:
+            raise ValueError(f"Unknown evidence run: {run_id}")
+        return build_gap_report(stored)
+
+    def node_detail(self, run_id: str, node_id: str) -> NodeEvidenceDetail:
+        """Return node-level evidence detail."""
+
+        stored = self.store.get_run(run_id)
+        if stored is None:
+            raise ValueError(f"Unknown evidence run: {run_id}")
+        return build_node_detail(stored, node_id)
+
+    def graph_for_run(self, run_id: str) -> WorkflowGraphPayload:
+        """Return graph payload for one run."""
+
+        stored = self.store.get_run(run_id)
+        if stored is None:
+            raise ValueError(f"Unknown evidence run: {run_id}")
+        return WorkflowGraphBuilder().build(stored)
+
+    def graph_for_workflow(self, workflow_id: str) -> WorkflowGraphPayload:
+        """Return graph payload for the latest run in one workflow."""
+
+        runs = self.store.list_runs(workflow_id=workflow_id)
+        if not runs:
+            raise ValueError(f"Unknown workflow: {workflow_id}")
+        return WorkflowGraphBuilder().build(runs[-1])
+
+    def optimization_chart(self, workflow_id: str) -> OptimizationChartPayload:
+        """Return an optimization chart for one workflow using its pinned or first baseline."""
+
+        runs = self.store.list_runs(workflow_id=workflow_id)
+        if not runs:
+            raise ValueError(f"Unknown workflow: {workflow_id}")
+        baseline_id = EvidenceBaselineStore(self.store.path).get_baseline(workflow_id)
+        baseline_run_id = baseline_id.baseline_run_id if baseline_id is not None else runs[0].run.run_id
+        candidates = [run.run.run_id for run in runs if run.run.run_id != baseline_run_id]
+        return self.optimization_chart_for_runs(baseline_run_id, candidates)
+
+    def optimization_chart_for_runs(
+        self,
+        baseline_run_id: str,
+        candidate_run_ids: list[str],
+    ) -> OptimizationChartPayload:
+        """Return an optimization chart for explicit baseline/candidate runs."""
+
+        baseline = self.store.get_run(baseline_run_id)
+        if baseline is None:
+            raise ValueError(f"Unknown baseline run: {baseline_run_id}")
+        candidates = []
+        comparisons = []
+        for candidate_run_id in candidate_run_ids:
+            candidate = self.store.get_run(candidate_run_id)
+            if candidate is None:
+                raise ValueError(f"Unknown candidate run: {candidate_run_id}")
+            candidates.append(candidate)
+            comparisons.append(self.compare(baseline_run_id, candidate_run_id))
+        return OptimizationChartBuilder().build(
+            baseline=baseline,
+            candidates=candidates,
+            comparisons=comparisons,
+        )
 
     def build_visualization(self, run: ExternalWorkflowRun) -> WorkflowVisualization:
         """Build diagnostic workflow map data for one imported run."""
@@ -179,6 +295,41 @@ class EvidenceService:
         self.store.save_comparison_report(report)
         return report
 
+    def export_comparison_markdown(self, baseline_run_id: str, candidate_run_id: str) -> str:
+        """Export a human-readable baseline-vs-candidate comparison report."""
+
+        report = self.store.get_comparison_report(baseline_run_id, candidate_run_id)
+        if report is None:
+            report = self.compare(baseline_run_id, candidate_run_id)
+        comparison = report.comparison
+        lines = [
+            "# Baseline vs Candidate",
+            "",
+            f"Workflow: {report.workflow_id}",
+            f"Baseline: {baseline_run_id}",
+            f"Candidate: {candidate_run_id}",
+            f"Recommendation: {report.recommendation.value}",
+            "",
+            "## Summary",
+            report.summary,
+            "",
+            "## Business Metrics",
+        ]
+        for name, value in report.business_metrics.items():
+            diff = comparison.business_metric_diffs.get(name) if comparison else None
+            suffix = "" if diff is None else f" (diff {diff:+.4f})"
+            lines.append(f"- {name}: {value}{suffix}")
+        lines.extend(["", "## System Metrics"])
+        for name, value in report.system_metrics.items():
+            diff = comparison.system_metric_diffs.get(name) if comparison else None
+            suffix = "" if diff is None else f" (diff {diff:+.4f})"
+            lines.append(f"- {name}: {value}{suffix}")
+        lines.extend(["", "## Evidence"])
+        lines.append(f"- Trace coverage: {report.trace_coverage:.0%}")
+        lines.append(f"- Metric coverage: {report.metric_coverage:.0%}")
+        lines.append(f"- Black boxes: {', '.join(report.black_box_node_ids) or 'none'}")
+        return "\n".join(lines)
+
     @staticmethod
     def _ordered_unique(values: Any) -> list[str]:
         result: list[str] = []
@@ -267,3 +418,19 @@ class EvidenceService:
             f"black_box_nodes={len(visualization.black_box_node_ids)}, "
             f"recommendation={recommendation.value}."
         )
+
+    @staticmethod
+    def _load_payload(path: str | Path) -> dict[str, Any]:
+        payload_path = Path(path)
+        raw = payload_path.read_text(encoding="utf-8")
+        if payload_path.suffix.lower() in {".yaml", ".yml"}:
+            try:
+                import yaml  # type: ignore[import-untyped]
+            except ImportError as exc:
+                raise ValueError("YAML workflow import requires PyYAML to be installed.") from exc
+            loaded = yaml.safe_load(raw)
+        else:
+            loaded = json.loads(raw)
+        if not isinstance(loaded, dict):
+            raise ValueError("Workflow import file must contain a JSON/YAML object.")
+        return loaded
