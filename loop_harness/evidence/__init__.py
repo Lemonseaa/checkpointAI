@@ -54,6 +54,7 @@ from loop_harness.evidence.service import EvidenceService
 from loop_harness.evidence.shadow_queue import ShadowReplayItem, ShadowReplayQueueStore
 from loop_harness.evidence.storage import EvidenceStore
 from loop_harness.evidence.trace import TraceNormalizer
+from loop_harness.evidence.tradingagents import convert_tradingagents_export
 from loop_harness.evidence.workflow_map import NodeEvidenceDetail, WorkflowMapSummary
 
 __all__ = [
@@ -101,6 +102,7 @@ __all__ = [
     "StoredEvidenceRun",
     "TraceEvent",
     "TraceNormalizer",
+    "convert_tradingagents_export",
     "WorkflowAdapterSDK",
     "WorkflowEdge",
     "WorkflowContractValidator",

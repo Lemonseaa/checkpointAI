@@ -127,6 +127,24 @@ Control:
 - Review packages explicitly say whether paper trading is recommended and what
   human approval is required.
 
+## Risk 9: TradingAgents Adapter Scope Creep
+
+Failure mode:
+
+```text
+Loop Harness starts running or modifying TradingAgents before it can reliably
+consume exported evidence.
+```
+
+Control:
+
+- TradingAgents work starts as export-only conversion.
+- The converter writes Workflow Contract v1 JSON and does not execute
+  TradingAgents.
+- Formal adapter implementation requires 5-10 real historical exports proving
+  stable trace, metrics, config, artifacts, and prompt/config control surfaces.
+- Live or paper trading remains human-gated and outside the converter.
+
 ## Current Decision
 
 The next engineering work should prioritize:
@@ -136,7 +154,8 @@ The next engineering work should prioritize:
 3. Optimization charts.
 4. Human preference UI.
 5. Quant evidence contract hardening.
-6. Adapter compatibility and gap reporting.
+6. TradingAgents export-only spike validation.
+7. Adapter compatibility and gap reporting.
 
 It should not prioritize:
 

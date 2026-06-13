@@ -59,6 +59,29 @@ A TradingAgents adapter is not worth building until one sample run can provide:
 - system metric: latency or cost;
 - artifacts: backtest report path or URI.
 
+## Output Mapping
+
+| TradingAgents-like field | Loop Harness field | Use |
+|---|---|---|
+| `run_id` | `run_id` | Stable evidence run identity |
+| `workflow_id` | `workflow_id` | Baseline/candidate grouping |
+| `run_kind` | `run_kind` | Evidence strength: historical/paper/live |
+| `agents[].id` | `nodes[].id` and `trace[].node_id` | Workflow visualization |
+| `agents[].role` | `nodes[].name` and trace metadata | Human-readable role map |
+| `agents[].input/output` | `trace[].input_summary/output_summary` | Node-level explanation |
+| `agents[].duration_ms` | `trace[].duration_ms` | Latency evidence |
+| `agents[].cost` | `trace[].cost` | Cost evidence |
+| `strategy_config` | `config` | Config surface / candidate change |
+| `metrics.sharpe` | `metrics.sharpe` | Business metric |
+| `metrics.total_return` | `metrics.total_return` | Business metric |
+| `metrics.max_drawdown` | `metrics.max_drawdown` | Guardrail metric |
+| `metrics.win_rate` | `metrics.win_rate` | Business metric |
+| `metrics.sample_count` | `metrics.sample_count` | Data-quality metric |
+| `artifacts[]` | `artifacts[]` | Review package links |
+
+Fields that are only prose remain artifacts or summaries. They must not be
+promoted to metrics without numeric extraction.
+
 ## Candidate Metrics
 
 | Metric | Direction | Category | Notes |
@@ -80,6 +103,17 @@ Phase 1: export-only spike.
 - Run TradingAgents normally.
 - Export one JSON file that matches Workflow Contract v1.
 - Ingest it with `loopharness evidence ingest`.
+
+Current spike converter:
+
+```bash
+python scripts/business_lines/quant/convert_tradingagents_export.py \
+  --input tests/fixtures/tradingagents_like_run.json \
+  --output /tmp/tradingagents_evidence.json
+```
+
+The converter accepts a TradingAgents-like JSON export and writes Loop Harness
+Workflow Contract v1 evidence. It does not run TradingAgents.
 
 Phase 2: baseline/candidate comparison.
 
@@ -122,6 +156,25 @@ The first useful milestone is:
 5. Generate at least 3 evidence reports.
 6. Produce one approve/reject recommendation with clear reasons.
 7. Record at least one system limitation discovered from real data.
+
+## Current Spike Decision
+
+Decision: `needs_spike`, not formal adapter yet.
+
+Reason:
+
+- Export-only conversion is feasible with a TradingAgents-like JSON file.
+- Loop Harness can ingest the converted payload, compare it against a baseline,
+  and generate a review package.
+- Formal adapter work still depends on real TradingAgents samples proving stable
+  role trace, metrics, config, artifacts, and prompt/config control surfaces.
+
+Next concrete action:
+
+```text
+Collect 5-10 real TradingAgents historical exports and run them through the
+converter before writing any code that executes TradingAgents directly.
+```
 
 ## Hard Boundary
 

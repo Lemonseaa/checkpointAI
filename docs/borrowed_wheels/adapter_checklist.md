@@ -82,10 +82,54 @@ Score each item from 0 to 2:
 | Candidate | Current Decision | Reason |
 |---|---|---|
 | Built-in quant evidence demo | go | First-party fixture already exposes nodes, trace, metrics, config, and baseline/candidate data. |
-| TradingAgents | needs_spike | High-value quant target, but trace/metrics/config extraction must be proven before adapter code. |
+| TradingAgents | needs_spike | High-value quant target. Export-only conversion is feasible, but real run trace and metric extraction must be proven before a formal adapter. |
 | Dify workflow export/API | needs_spike | Useful ecosystem and UI reference, but node-level trace and metric capture vary by workflow. |
 | CrewAI | needs_spike | Easier Python integration, but quality depends on how crews expose logs, tasks, and metrics. |
 | Fully black-box SaaS workflow | no_go | Cannot support evidence-driven optimization without trace, metrics, or config surface. |
+
+## TradingAgents Spike Report
+
+Candidate: TradingAgents-style quant research workflow
+Repository / source: external TradingAgents-compatible export, not directly imported
+Scenario: quant
+Use case: historical backtest evidence converted into Workflow Contract v1
+
+Scores:
+
+- Structured input: 1 — task metadata can be represented, but exact upstream API varies.
+- Structured output: 1 — feasible if a JSON export is produced; Markdown-only output is insufficient.
+- Workflow map: 1 — roles can be mapped into nodes and sequence edges.
+- Node trace: 1 — role-level summaries and duration/cost are enough for a first map, but tool-level trace still needs proof.
+- Business metrics: 2 — backtest metrics map cleanly when exported as numbers.
+- System metrics: 1 — latency/cost can be captured when role timings are exported.
+- Config surface: 2 — strategy parameters map to `config`.
+- Prompt control: 0 — prompt slots are not proven in this spike.
+- Replay / shadow: 1 — exported historical runs can be replayed through Loop Harness, but TradingAgents execution is not controlled.
+- Artifacts: 2 — reports/log files can be linked as artifacts.
+- Isolation: 1 — scenario/run IDs provide Loop Harness isolation; upstream data isolation still needs review.
+- Effort: 1 — export-only conversion is small; formal adapter depends on upstream instrumentation.
+- Dependencies: 1 — no dependency for export conversion; full integration may require TradingAgents runtime setup.
+
+Blockers:
+
+- Tool-level trace is not proven.
+- Prompt/control surfaces are not proven.
+- Direct execution should not be added before export-quality evidence is stable.
+
+Estimated integration effort:
+
+```text
+export-only spike: 0.5-1 day
+formal adapter after real samples: 3-5 days
+```
+
+Decision: needs_spike
+
+Reason:
+
+TradingAgents is worth investigating, but Loop Harness should first consume
+exported JSON evidence. A formal adapter is justified only after at least one
+real TradingAgents run can expose stable metrics, config, trace, and artifacts.
 
 ## Report Template
 

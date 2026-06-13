@@ -1,0 +1,87 @@
+{
+  "run_id": "ta_candidate_001",
+  "workflow_id": "tradingagents_quant_research",
+  "scenario_id": "quant",
+  "run_kind": "historical",
+  "task": {
+    "symbol": "AAPL",
+    "capital": 100000,
+    "start_date": "2024-01-01",
+    "end_date": "2025-12-31",
+    "objective": "improve sharpe without increasing drawdown"
+  },
+  "agents": [
+    {
+      "id": "market_analyst",
+      "role": "Market Analyst",
+      "input": "AAPL daily bars and market context",
+      "output": "Momentum regime stayed positive over the test window.",
+      "duration_ms": 1400,
+      "cost": 0.08
+    },
+    {
+      "id": "researcher",
+      "role": "Strategy Researcher",
+      "input": "Momentum regime plus baseline moving-average strategy",
+      "output": "Candidate increases fast_window to 10 and slow_window to 24.",
+      "duration_ms": 2100,
+      "cost": 0.12,
+      "metrics": {
+        "candidate_count": 1
+      }
+    },
+    {
+      "id": "risk_manager",
+      "role": "Risk Manager",
+      "input": "Candidate strategy and backtest metrics",
+      "output": "Drawdown remains inside 20% guardrail.",
+      "duration_ms": 900,
+      "cost": 0.04,
+      "metrics": {
+        "max_drawdown": 0.11
+      }
+    },
+    {
+      "id": "backtester",
+      "role": "Backtester",
+      "input": "Candidate strategy parameters",
+      "output": "Backtest completed with 504 samples.",
+      "duration_ms": 3200,
+      "cost": 0.02,
+      "metrics": {
+        "sharpe": 1.31,
+        "sample_count": 504
+      }
+    }
+  ],
+  "strategy_config": {
+    "strategy": "moving_average",
+    "fast_window": 10,
+    "slow_window": 24,
+    "risk_limit": 0.2
+  },
+  "metrics": {
+    "total_return": 0.26,
+    "annual_return": 0.13,
+    "benchmark_return": 0.16,
+    "excess_return": 0.1,
+    "sharpe": 1.31,
+    "max_drawdown": 0.11,
+    "win_rate": 0.58,
+    "turnover": 1.4,
+    "trade_count": 96,
+    "sample_count": 504,
+    "latency_ms": 7600,
+    "api_cost": 0.26
+  },
+  "artifacts": [
+    {
+      "type": "markdown",
+      "path": "reports/tradingagents_candidate_001.md"
+    },
+    {
+      "type": "json",
+      "path": "runs/tradingagents_candidate_001.json"
+    }
+  ]
+}

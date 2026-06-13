@@ -102,6 +102,58 @@ const evidenceRuns = [
         }
       }
     }
+  },
+  {
+    run: {
+      workflow_id: "tradingagents_quant_research",
+      run_id: "ta-candidate-001",
+      scenario_id: "quant",
+      run_kind: "historical",
+      metrics: { sharpe: 1.31, max_drawdown: 0.11, total_return: 0.26, sample_count: 504 },
+      metadata: { source: "tradingagents_spike" }
+    },
+    visualization: {
+      workflow_id: "tradingagents_quant_research",
+      run_id: "ta-candidate-001",
+      nodes: [
+        { id: "market_analyst", name: "Market Analyst", type: "agent", metadata: { traced: true } },
+        { id: "researcher", name: "Strategy Researcher", type: "agent", metadata: { traced: true } },
+        { id: "risk_manager", name: "Risk Manager", type: "agent", metadata: { traced: true } },
+        { id: "backtester", name: "Backtester", type: "tool", metadata: { traced: true } }
+      ],
+      edges: [
+        { source: "market_analyst", target: "researcher", type: "sequence", metadata: {} },
+        { source: "researcher", target: "risk_manager", type: "sequence", metadata: {} },
+        { source: "risk_manager", target: "backtester", type: "sequence", metadata: {} }
+      ],
+      run_path: ["market_analyst", "researcher", "risk_manager", "backtester"],
+      total_nodes: 4,
+      traced_node_ids: ["market_analyst", "researcher", "risk_manager", "backtester"],
+      metric_node_ids: ["risk_manager", "backtester"],
+      black_box_node_ids: [],
+      error_node_ids: [],
+      trace_coverage: 1,
+      metric_coverage: 0.5,
+      node_costs: { market_analyst: 0.08, researcher: 0.12, risk_manager: 0.04, backtester: 0.02 },
+      node_latencies_ms: { market_analyst: 1400, researcher: 2100, risk_manager: 900, backtester: 3200 }
+    },
+    report: {
+      workflow_id: "tradingagents_quant_research",
+      run_id: "ta-candidate-001",
+      baseline_run_id: null,
+      candidate_run_id: null,
+      run_kind: "historical",
+      trace_coverage: 1,
+      metric_coverage: 0.5,
+      black_box_node_ids: [],
+      business_metrics: { sharpe: 1.31, max_drawdown: 0.11, total_return: 0.26 },
+      system_metrics: {},
+      data_quality_metrics: { sample_count: 504 },
+      comparison: null,
+      recommendation: "continue_shadow",
+      summary: "TradingAgents-like candidate converted through export-only spike.",
+      evidence: { quality: { status: "accepted", score: 1, reasons: [] } }
+    }
   }
 ];
 
@@ -703,6 +755,8 @@ test("opens the evidence console page", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Workflow Maps" })).toBeVisible();
   await expect(page.getByText("Imported workflow structures")).toBeVisible();
   await expect(page.getByRole("heading", { name: "quant-demo" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "tradingagents_quant_research" })).toBeVisible();
+  await expect(page.getByText("Market Analyst -> Strategy Researcher -> Risk Manager -> Backtester")).toBeVisible();
 
   await page.getByRole("link", { name: "Charts" }).click();
   await expect(page).toHaveURL(/\/charts$/);

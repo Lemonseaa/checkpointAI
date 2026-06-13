@@ -19,3 +19,11 @@ Run an evidence drill for the console:
 ```bash
 python scripts/business_lines/run_evidence_drill.py --db data/loopharness.db --candidates 10
 ```
+
+Convert a TradingAgents-like export into Loop Harness evidence JSON:
+
+```bash
+python scripts/business_lines/quant/convert_tradingagents_export.py \
+  --input tests/fixtures/tradingagents_like_run.json \
+  --output /tmp/tradingagents_evidence.json
+```
