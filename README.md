@@ -2,7 +2,7 @@
 
 **Evidence-driven control layer for external AI workflows**
 
-[![Tests](https://img.shields.io/badge/tests-279%20passed-brightgreen)](https://github.com/Lemonseaa/loop-harness)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/Lemonseaa/loop-harness)
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/license-Non--Commercial-red)](LICENSE)
@@ -182,6 +182,22 @@ loopharness evidence quant-drill --candidates 30 --comparisons 5
 This creates a deterministic semi-real historical drill: one baseline, thirty candidate
 runs, five baseline/candidate comparisons, workflow visualization data, and a paper-trade
 recommendation. It validates the evidence chain; it is not a live trading signal.
+
+A-share quant loop example:
+
+```bash
+loopharness evidence quant-a-share-loop \
+  --symbol 600519.SH \
+  --provider static-a-share \
+  --start 2024-01-01 \
+  --end 2024-12-31 \
+  --fast-window 5 \
+  --slow-window 20
+```
+
+For serious A-share work, use `--provider vendor-csv` with a licensed or
+operator-provided export. The static provider is a deterministic fixture for
+tests and demos; it is never decision-grade evidence.
 
 Docker:
 

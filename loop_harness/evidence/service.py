@@ -537,7 +537,7 @@ class EvidenceService:
             return DecisionRecommendation.APPROVE
         if decision == EvidenceDecision.WORSE:
             return DecisionRecommendation.REJECT
-        return DecisionRecommendation.CONTINUE_SHADOW
+        return DecisionRecommendation.INCONCLUSIVE
 
     @staticmethod
     def _run_summary(

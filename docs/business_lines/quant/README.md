@@ -13,6 +13,81 @@ historical data
   -> paper-trading recommendation
 ```
 
+## A-Share First Data Path
+
+The first serious market is A-share. Other markets can wait.
+
+Good data matters more than a quick generic demo. The preferred path is:
+
+```text
+licensed/vendor A-share export or Tushare Pro
+  -> normalized A-share market data contract
+  -> baseline/candidate backtest
+  -> evidence run
+  -> baseline/candidate comparison
+  -> chart/report/review package
+```
+
+Supported source priorities:
+
+```text
+1. vendor-csv: operator-provided licensed export from Tushare Pro, JoinQuant, RiceQuant, Choice, Wind, or broker research platform
+2. tushare: explicit-token API bridge, no silent fallback
+3. static-a-share: deterministic fixture for tests and demos only
+```
+
+Scraped or unstable sources are not the main path for serious evidence. A data
+set must preserve source, vendor, license note, adjustment mode, sample count,
+and quality flags. Static or fixture data is always marked non-decision-grade.
+
+Run the A-share loop with deterministic demo data:
+
+```bash
+loopharness evidence quant-a-share-loop \
+  --symbol 600519.SH \
+  --provider static-a-share \
+  --start 2024-01-01 \
+  --end 2024-12-31 \
+  --fast-window 5 \
+  --slow-window 20
+```
+
+Run it with a serious vendor CSV export:
+
+```bash
+loopharness evidence quant-a-share-loop \
+  --symbol 600519.SH \
+  --provider vendor-csv \
+  --data-path /path/to/600519_daily.csv \
+  --vendor tushare_pro_export \
+  --start 2024-01-01 \
+  --end 2024-12-31 \
+  --adjusted qfq \
+  --fast-window 5 \
+  --slow-window 20
+```
+
+Required market-data CSV columns:
+
+```text
+ts_code
+trade_date
+open
+high
+low
+close
+vol
+```
+
+Recommended column:
+
+```text
+amount
+```
+
+Historical A-share backtests can support research and paper-trading discussion.
+They still cannot prove live-trading profitability.
+
 ## Current Drill
 
 ```bash
@@ -154,6 +229,11 @@ The first serious external workflow candidate is TradingAgents. The plan is
 
 Loop Harness should observe TradingAgents runs, not replace the TradingAgents
 team structure.
+
+Before formal TradingAgents adapter work starts, fill the
+[TradingAgents go/no-go report](reports/tradingagents_spike_go_no_go.md) with
+real sanitized historical exports. Adapter work can start only when the report
+says `go`, or `needs_mapping_fix` with explicit mapping fixes.
 
 ## Reports
 

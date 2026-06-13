@@ -26,7 +26,7 @@ class TradingAgentsSpikeTest(unittest.TestCase):
         self.assertEqual(payload["workflow_id"], "tradingagents_quant_research")
         self.assertEqual(payload["run_id"], "ta_candidate_001")
         self.assertEqual(payload["scenario_id"], "quant")
-        self.assertEqual(payload["run_kind"], "historical")
+        self.assertEqual(payload["run_kind"], "fixture")
         self.assertEqual(payload["metadata"]["contract"], "quant_evidence_v1")
         self.assertEqual(len(payload["nodes"]), 4)
         self.assertEqual(len(payload["trace"]), 4)
@@ -57,9 +57,21 @@ class TradingAgentsSpikeTest(unittest.TestCase):
             report = harness.compare("ta_baseline", "ta_candidate_001")
             package = harness.review_package_for_runs("ta_baseline", ["ta_candidate_001"])
 
-        self.assertEqual(report.recommendation.value, "approve")
-        self.assertEqual(package.recommended_action, "review_for_paper")
-        self.assertIn("是否建议进入 paper trading：是", package.markdown)
+        self.assertEqual(report.recommendation.value, "inconclusive")
+        self.assertEqual(package.recommended_action, "collect_more_evidence")
+        self.assertIn("是否建议进入 paper trading：否", package.markdown)
+
+    def test_fixture_evidence_is_rejected_by_quality_gate(self) -> None:
+        raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        candidate = convert_tradingagents_export(raw)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            harness = EvidenceHarness(Path(tmp) / "evidence.db")
+            result = harness.ingest_payload(candidate)
+
+        quality = result.report.evidence["quality"]
+        self.assertEqual(quality["status"], "rejected")
+        self.assertIn("fixture_not_real_evidence", quality["reasons"])
 
     def test_converter_rejects_missing_core_metrics(self) -> None:
         raw = json.loads(FIXTURE.read_text(encoding="utf-8"))

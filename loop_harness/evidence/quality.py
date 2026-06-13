@@ -38,6 +38,7 @@ class EvidenceQualityGate:
         reasons: list[str] = []
         score = 1.0
         sample_count = int(run.metrics.get("sample_count", 0))
+        data_source = str(run.metadata.get("data_source", "")).lower()
 
         if visualization.trace_coverage < self.min_trace_coverage:
             reasons.append("low_trace_coverage")
@@ -48,7 +49,13 @@ class EvidenceQualityGate:
         if visualization.black_box_node_ids:
             reasons.append("black_box_nodes_present")
             score -= 0.2
-        if run.run_kind.value == "synthetic" and sample_count < self.min_sample_count:
+        if run.run_kind.value == "fixture":
+            reasons.append("fixture_not_real_evidence")
+            score -= 0.55
+        elif self._non_decision_data_source(data_source):
+            reasons.append("non_decision_data_source")
+            score -= 0.45
+        elif run.run_kind.value == "synthetic" and sample_count < self.min_sample_count:
             reasons.append("synthetic_low_sample")
             score -= 0.35
         elif sample_count and sample_count < self.min_sample_count:
@@ -56,7 +63,12 @@ class EvidenceQualityGate:
             score -= 0.2
 
         normalized_score = max(0.0, min(1.0, round(score, 4)))
-        if "synthetic_low_sample" in reasons or normalized_score < 0.5:
+        if (
+            "fixture_not_real_evidence" in reasons
+            or "non_decision_data_source" in reasons
+            or "synthetic_low_sample" in reasons
+            or normalized_score < 0.5
+        ):
             status = EvidenceQualityStatus.REJECTED
         elif reasons:
             status = EvidenceQualityStatus.WARNING
@@ -64,3 +76,10 @@ class EvidenceQualityGate:
             status = EvidenceQualityStatus.ACCEPTED
 
         return EvidenceQualityResult(status=status, score=normalized_score, reasons=reasons)
+
+    @staticmethod
+    def _non_decision_data_source(data_source: str) -> bool:
+        if not data_source:
+            return False
+        blocked_tokens = ("fixture", "synthetic", "mock", "demo")
+        return any(token in data_source for token in blocked_tokens)

@@ -18,6 +18,7 @@ from loop_harness.metrics import (
 class RunKind(str, Enum):
     """Evidence source type for one run."""
 
+    FIXTURE = "fixture"
     SYNTHETIC = "synthetic"
     HISTORICAL = "historical"
     PAPER = "paper"

@@ -18,7 +18,7 @@ def convert_tradingagents_export(raw: dict[str, Any]) -> dict[str, Any]:
         "workflow_id": str(raw.get("workflow_id") or "tradingagents_quant_research"),
         "run_id": str(raw.get("run_id") or "tradingagents_run"),
         "scenario_id": str(raw.get("scenario_id") or "quant"),
-        "run_kind": str(raw.get("run_kind") or "historical"),
+        "run_kind": str(raw.get("run_kind") or "fixture"),
         "nodes": [_node(agent) for agent in agents],
         "edges": _edges(agents),
         "trace": [_trace(agent) for agent in agents],

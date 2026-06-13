@@ -166,6 +166,9 @@ Reason:
 - Export-only conversion is feasible with a TradingAgents-like JSON file.
 - Loop Harness can ingest the converted payload, compare it against a baseline,
   and generate a review package.
+- The committed TradingAgents-like sample is a `fixture`, not historical
+  evidence. It validates the conversion path only and cannot support an
+  optimization or paper-trading claim.
 - Formal adapter work still depends on real TradingAgents samples proving stable
   role trace, metrics, config, artifacts, and prompt/config control surfaces.
 
@@ -175,6 +178,12 @@ Next concrete action:
 Collect 5-10 real TradingAgents historical exports and run them through the
 converter before writing any code that executes TradingAgents directly.
 ```
+
+The real-sample gate is documented in
+[tradingagents_real_sample_gate.md](tradingagents_real_sample_gate.md). The
+sample fixture in `tests/fixtures/tradingagents_like_run.json` is only a
+conversion probe; it is stored as `run_kind=fixture` and cannot support adapter
+approval.
 
 ## Hard Boundary
 

@@ -153,6 +153,11 @@ export function EvidenceRunDetailPage() {
               <div className="mt-3 text-xs text-muted">
                 Kind: {stored.run.run_kind} / Black boxes: {stored.visualization.black_box_node_ids.length}
               </div>
+              {stored.run.run_kind === "fixture" || stored.run.run_kind === "synthetic" ? (
+                <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Fixture or synthetic evidence only validates the harness path; it cannot support optimization claims.
+                </div>
+              ) : null}
               <button
                 className="mt-4 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-border disabled:text-muted"
                 disabled={setBaseline.isPending || isActiveBaseline}

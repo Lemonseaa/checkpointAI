@@ -62,6 +62,22 @@ class EvidenceQualityTest(unittest.TestCase):
         self.assertIn("synthetic_low_sample", quality["reasons"])
         self.assertIn("low_trace_coverage", quality["reasons"])
 
+    def test_historical_run_with_fixture_source_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = _payload(
+                run_id="fixture-source",
+                run_kind="historical",
+                sample_count=200,
+                trace_all=True,
+                black_box=False,
+            )
+            payload["metadata"] = {"data_source": "fixture_history"}
+            result = EvidenceService(EvidenceStore(Path(tmp) / "quality.db")).ingest_payload(payload)
+
+        quality = result.report.evidence["quality"]
+        self.assertEqual(quality["status"], "rejected")
+        self.assertIn("non_decision_data_source", quality["reasons"])
+
 
 def _payload(
     *,

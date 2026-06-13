@@ -81,6 +81,8 @@ class EvidenceReviewPackageBuilder:
         best = next((point for point in chart.candidate_points if point.best_candidate), None)
         if best is None:
             return "collect_more_evidence"
+        if best.run_kind in {"fixture", "synthetic"}:
+            return "collect_more_evidence"
         if best.guardrail_status == "violated":
             return "reject_or_refine"
         return "review_for_paper"

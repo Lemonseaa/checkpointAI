@@ -2,7 +2,7 @@
   "run_id": "ta_candidate_001",
   "workflow_id": "tradingagents_quant_research",
   "scenario_id": "quant",
-  "run_kind": "historical",
+  "run_kind": "fixture",
   "task": {
     "symbol": "AAPL",
     "capital": 100000,

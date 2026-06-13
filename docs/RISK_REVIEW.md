@@ -141,6 +141,9 @@ Control:
 - TradingAgents work starts as export-only conversion.
 - The converter writes Workflow Contract v1 JSON and does not execute
   TradingAgents.
+- TradingAgents-like fixtures are stored as `run_kind=fixture`; fixture evidence
+  is rejected by the quality gate and cannot justify paper-trading
+  recommendations.
 - Formal adapter implementation requires 5-10 real historical exports proving
   stable trace, metrics, config, artifacts, and prompt/config control surfaces.
 - Live or paper trading remains human-gated and outside the converter.

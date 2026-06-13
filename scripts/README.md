@@ -27,3 +27,20 @@ python scripts/business_lines/quant/convert_tradingagents_export.py \
   --input tests/fixtures/tradingagents_like_run.json \
   --output /tmp/tradingagents_evidence.json
 ```
+
+Batch-convert a directory of sanitized TradingAgents exports:
+
+```bash
+python scripts/business_lines/quant/convert_tradingagents_export.py \
+  --input-dir examples/tradingagents \
+  --output-dir /tmp/tradingagents_evidence \
+  --strict
+```
+
+Review converted TradingAgents samples through the evidence harness:
+
+```bash
+python scripts/business_lines/quant/review_tradingagents_samples.py \
+  --input-dir examples/tradingagents \
+  --db .runtime/tradingagents_review.db
+```

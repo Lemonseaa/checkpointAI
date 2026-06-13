@@ -108,7 +108,7 @@ const evidenceRuns = [
       workflow_id: "tradingagents_quant_research",
       run_id: "ta-candidate-001",
       scenario_id: "quant",
-      run_kind: "historical",
+      run_kind: "fixture",
       metrics: { sharpe: 1.31, max_drawdown: 0.11, total_return: 0.26, sample_count: 504 },
       metadata: { source: "tradingagents_spike" }
     },
@@ -142,7 +142,7 @@ const evidenceRuns = [
       run_id: "ta-candidate-001",
       baseline_run_id: null,
       candidate_run_id: null,
-      run_kind: "historical",
+      run_kind: "fixture",
       trace_coverage: 1,
       metric_coverage: 0.5,
       black_box_node_ids: [],
@@ -150,9 +150,9 @@ const evidenceRuns = [
       system_metrics: {},
       data_quality_metrics: { sample_count: 504 },
       comparison: null,
-      recommendation: "continue_shadow",
-      summary: "TradingAgents-like candidate converted through export-only spike.",
-      evidence: { quality: { status: "accepted", score: 1, reasons: [] } }
+      recommendation: "inconclusive",
+      summary: "TradingAgents-like fixture converted through export-only spike; not real historical evidence.",
+      evidence: { quality: { status: "rejected", score: 0.45, reasons: ["fixture_not_real_evidence"] } }
     }
   }
 ];
@@ -757,6 +757,10 @@ test("opens the evidence console page", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "quant-demo" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "tradingagents_quant_research" })).toBeVisible();
   await expect(page.getByText("Market Analyst -> Strategy Researcher -> Risk Manager -> Backtester")).toBeVisible();
+  await expect(page.getByText("fixture").first()).toBeVisible();
+  await expect(
+    page.getByText("Fixture or synthetic evidence only validates the harness path; it cannot support optimization claims.")
+  ).toBeVisible();
 
   await page.getByRole("link", { name: "Charts" }).click();
   await expect(page).toHaveURL(/\/charts$/);

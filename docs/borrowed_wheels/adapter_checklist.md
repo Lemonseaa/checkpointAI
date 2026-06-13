@@ -114,6 +114,7 @@ Blockers:
 
 - Tool-level trace is not proven.
 - Prompt/control surfaces are not proven.
+- Fixture-only evidence is not enough for a go decision.
 - Direct execution should not be added before export-quality evidence is stable.
 
 Estimated integration effort:
@@ -130,6 +131,15 @@ Reason:
 TradingAgents is worth investigating, but Loop Harness should first consume
 exported JSON evidence. A formal adapter is justified only after at least one
 real TradingAgents run can expose stable metrics, config, trace, and artifacts.
+
+Adapter approval is now based on `score_tradingagents_samples(converted_payloads)`,
+not repository reputation or fixture success. The score must use sanitized real
+historical exports:
+
+- Fixture-only samples produce `no_go`.
+- Fewer than five real exports produce `needs_more_samples`.
+- Missing trace, config surface, or core quant metrics produce `needs_mapping_fix`.
+- Only enough real, structured samples can produce `go`.
 
 ## Report Template
 
@@ -166,5 +176,10 @@ Reason:
 ## Rule
 
 Write the compatibility report before writing adapter code.
+
+For TradingAgents, formal adapter implementation can start only after
+`docs/business_lines/quant/reports/tradingagents_spike_go_no_go.md` is filled
+from real sanitized exports and says `go`, or `needs_mapping_fix` with explicit
+fixes.
 
 First improve observability, then integrate, then optimize.

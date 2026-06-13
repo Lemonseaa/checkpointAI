@@ -64,6 +64,7 @@ class EvidenceEvaluationEngine:
             "data_source": comparison.provenance.get("data_source"),
             "business_metric_count": len(comparison.business_metric_diffs),
         }
+        data_source = str(comparison.provenance.get("data_source", "")).lower()
         if comparison.guardrail_violations:
             return EvidenceEvaluation(
                 decision=EvidenceDecision.WORSE,
@@ -77,12 +78,21 @@ class EvidenceEvaluationEngine:
                 guardrail_violations=list(comparison.guardrail_violations),
                 evidence=evidence,
             )
-        if comparison.run_kind == "synthetic":
+        if comparison.run_kind in {"fixture", "synthetic"}:
             return EvidenceEvaluation(
                 decision=EvidenceDecision.INCONCLUSIVE,
                 recommended_action=RecommendedAction.COLLECT_MORE_EVIDENCE,
                 confidence=confidence,
-                reason="synthetic evidence can validate the loop but cannot justify recommendation.",
+                reason=f"{comparison.run_kind} evidence can validate the loop but cannot justify recommendation.",
+                objective_score=comparison.objective_score,
+                evidence=evidence,
+            )
+        if self._non_decision_data_source(data_source):
+            return EvidenceEvaluation(
+                decision=EvidenceDecision.INCONCLUSIVE,
+                recommended_action=RecommendedAction.COLLECT_MORE_EVIDENCE,
+                confidence=confidence,
+                reason=f"data_source={data_source} is not decision-grade evidence.",
                 objective_score=comparison.objective_score,
                 evidence=evidence,
             )
@@ -134,6 +144,7 @@ class EvidenceEvaluationEngine:
 
     def _confidence(self, comparison: ComparisonResult, sample_count: int) -> float:
         run_kind_factor = {
+            "fixture": 0.1,
             "synthetic": 0.25,
             "historical": 0.75,
             "paper": 0.85,
@@ -143,3 +154,10 @@ class EvidenceEvaluationEngine:
         metric_factor = min(1.0, len(comparison.business_metric_diffs) / 3.0)
         score_factor = min(1.0, abs(comparison.objective_score) / max(self.min_objective_score, 0.01))
         return round((run_kind_factor * 0.45) + (sample_factor * 0.25) + (metric_factor * 0.2) + (score_factor * 0.1), 4)
+
+    @staticmethod
+    def _non_decision_data_source(data_source: str) -> bool:
+        if not data_source:
+            return False
+        blocked_tokens = ("fixture", "synthetic", "mock", "demo")
+        return any(token in data_source for token in blocked_tokens)

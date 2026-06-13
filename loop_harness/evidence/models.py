@@ -13,6 +13,7 @@ from loop_harness.metrics import ComparisonResult
 class EvidenceRunKind(str, Enum):
     """Source type for one external workflow run."""
 
+    FIXTURE = "fixture"
     SYNTHETIC = "synthetic"
     HISTORICAL = "historical"
     PAPER = "paper"

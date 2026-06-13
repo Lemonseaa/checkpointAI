@@ -64,6 +64,11 @@ export function WorkflowListPage() {
                   )
                 },
                 {
+                  key: "kind",
+                  header: "Latest Kind",
+                  render: (row) => <StatusBadge value={row.latest.run.run_kind} />
+                },
+                {
                   key: "recommendation",
                   header: "Latest Recommendation",
                   render: (row) => <StatusBadge value={row.latest.report.recommendation} />
@@ -79,6 +84,15 @@ export function WorkflowListPage() {
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         {workflowGroups.map((group) => (
           <Card key={group.workflowId} title={group.workflowId}>
+            <div className="mb-3 flex flex-wrap gap-2">
+              <StatusBadge value={group.latest.run.run_kind} />
+              <StatusBadge value={group.latest.report.recommendation} />
+            </div>
+            {isNonDecisionEvidence(group.latest.run.run_kind) ? (
+              <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Fixture or synthetic evidence only validates the harness path; it cannot support optimization claims.
+              </div>
+            ) : null}
             <div className="text-sm text-ink">
               {group.latest.visualization.nodes.map((node) => node.name || node.id).join(" -> ") || "No nodes"}
             </div>
@@ -128,4 +142,8 @@ function average(values: number[]) {
     return 0;
   }
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function isNonDecisionEvidence(runKind: string) {
+  return runKind === "fixture" || runKind === "synthetic";
 }

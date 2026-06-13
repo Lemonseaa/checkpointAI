@@ -54,7 +54,7 @@ def _run_payload(run_id: str, sharpe: float, drawdown: float) -> dict[str, objec
         },
         "config": {"strategy": "moving_average", "fast_window": 8},
         "artifacts": [{"type": "csv", "path": "results.csv"}],
-        "metadata": {"data_source": "fixture_history"},
+        "metadata": {"data_source": "vendor_historical_prices"},
     }
 
 

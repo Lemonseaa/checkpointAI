@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from loop_harness.evidence.quant_drill import QuantDrillRunner
 from loop_harness.evidence.review_package import EvidenceReviewPackage
 from loop_harness.harness import EvidenceHarness
+from loop_harness.quant_data.models import AShareMarketDataSet
+from loop_harness.quant_data.pipeline import AShareQuantLoopPipeline
+from loop_harness.quant_data.providers import (
+    AShareStaticProvider,
+    MarketDataProvider,
+    TushareDailyProvider,
+    VendorCSVAShareProvider,
+)
 
 
 def register_evidence_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -89,6 +98,24 @@ def register_evidence_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     quant_drill_parser.add_argument("--candidates", type=int, default=30)
     quant_drill_parser.add_argument("--comparisons", type=int, default=5)
     quant_drill_parser.add_argument("--v2", action="store_true")
+
+    quant_a_share_parser = evidence_subparsers.add_parser("quant-a-share-loop")
+    quant_a_share_parser.add_argument("--symbol", required=True, dest="ts_code")
+    quant_a_share_parser.add_argument(
+        "--provider",
+        choices=["static-a-share", "vendor-csv", "tushare"],
+        default="static-a-share",
+    )
+    quant_a_share_parser.add_argument("--data-path")
+    quant_a_share_parser.add_argument("--vendor", default="operator_export")
+    quant_a_share_parser.add_argument("--tushare-token")
+    quant_a_share_parser.add_argument("--start", required=True)
+    quant_a_share_parser.add_argument("--end", required=True)
+    quant_a_share_parser.add_argument("--adjusted", default="qfq", dest="adjusted_mode")
+    quant_a_share_parser.add_argument("--fast-window", type=int, default=5)
+    quant_a_share_parser.add_argument("--slow-window", type=int, default=20)
+    quant_a_share_parser.add_argument("--scenario", default="quant_a_share", dest="scenario_id")
+    quant_a_share_parser.add_argument("--kind", default="historical", dest="run_kind")
 
 
 def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
@@ -298,8 +325,61 @@ def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
         )
         return 0
 
+    if args.evidence_command == "quant-a-share-loop":
+        try:
+            dataset = _a_share_dataset_from_args(args)
+            workflow_id = f"a_share_quant_{args.ts_code.replace('.', '_')}"
+            loop_result = AShareQuantLoopPipeline(harness).run(
+                dataset,
+                workflow_id=workflow_id,
+                scenario_id=args.scenario_id,
+                run_kind=args.run_kind,
+                fast_window=args.fast_window,
+                slow_window=args.slow_window,
+            )
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(str(exc))
+            return 1
+        _print_json(
+            {
+                "workflow_id": loop_result.workflow_id,
+                "scenario_id": loop_result.scenario_id,
+                "baseline_run_id": loop_result.baseline_run_id,
+                "candidate_run_id": loop_result.candidate_run_id,
+                "data_quality": loop_result.data_quality.model_dump(mode="json"),
+                "recommendation": loop_result.comparison.recommendation.value,
+                "summary": loop_result.comparison.summary,
+                "chart": loop_result.chart.model_dump(mode="json"),
+            }
+        )
+        return 0
+
     print("Unknown evidence command")
     return 1
+
+
+def _a_share_dataset_from_args(args: argparse.Namespace) -> AShareMarketDataSet:
+    start = date.fromisoformat(args.start)
+    end = date.fromisoformat(args.end)
+    provider: MarketDataProvider
+    if args.provider == "static-a-share":
+        provider = AShareStaticProvider()
+    elif args.provider == "vendor-csv":
+        if not args.data_path:
+            raise ValueError("vendor-csv provider requires --data-path")
+        provider = VendorCSVAShareProvider(args.data_path, vendor=args.vendor)
+    elif args.provider == "tushare":
+        if not args.tushare_token:
+            raise ValueError("tushare provider requires --tushare-token")
+        provider = TushareDailyProvider(args.tushare_token)
+    else:
+        raise ValueError(f"Unsupported A-share provider: {args.provider}")
+    return provider.fetch(
+        ts_code=args.ts_code,
+        start=start,
+        end=end,
+        adjusted_mode=args.adjusted_mode,
+    )
 
 
 def _print_json(payload: Any) -> None:
