@@ -88,6 +88,139 @@ amount
 Historical A-share backtests can support research and paper-trading discussion.
 They still cannot prove live-trading profitability.
 
+## A-Share Batch Experiments
+
+Use a manifest when you have multiple real A-share samples:
+
+```text
+examples/a_share_data/
+├── manifest.json
+├── daily/
+│   ├── 600519.SH.csv
+│   ├── 000001.SZ.csv
+│   └── 510300.SH.csv
+└── reports/
+```
+
+The manifest owns provenance and quality metadata:
+
+```text
+ts_code
+name
+source_vendor
+adjusted_mode
+start_date
+end_date
+decision_grade
+license_note
+file_path
+```
+
+Run a batch parameter grid:
+
+```bash
+loopharness evidence quant-a-share-batch \
+  --manifest examples/a_share_data/manifest.json \
+  --fast-windows 5,10,20 \
+  --slow-windows 20,60,120
+```
+
+The batch output includes:
+
+```text
+quality_summary
+recommendation_distribution
+best_candidates
+chart_payload.symbol_ranking
+chart_payload.parameter_heatmap
+chart_payload.quality_distribution
+chart_payload.drawdown_blockers
+markdown
+```
+
+This is the first practical path for running 30-50 real historical A-share
+experiments before adding more framework features.
+
+## Quant Platform Exports
+
+Loop Harness should not clone platform backtest engines. Serious A-share
+research should use external execution platforms and import their evidence.
+
+Platform roles:
+
+```text
+Data source: Tushare / JQData / RQData / vendor CSV
+Backtest execution: JoinQuant export / RQAlpha local runner
+Research suggestions: TradingAgents-style research team
+Evidence control: Loop Harness
+Paper/live trading: later stage with explicit human approval
+```
+
+Standard export directory:
+
+```text
+export_dir/
+├── metadata.json
+├── metrics.json
+├── equity_curve.csv
+├── trades.csv
+├── positions.csv
+└── logs.txt
+```
+
+`metadata.json` must include:
+
+```text
+platform
+run_id
+strategy_name
+strategy_version
+universe
+benchmark
+start_date
+end_date
+initial_cash
+commission
+slippage
+frequency
+run_kind
+parameters
+```
+
+`metrics.json` must include the quant evidence metrics:
+
+```text
+total_return
+annual_return
+sharpe
+max_drawdown
+volatility
+win_rate
+turnover
+trade_count
+benchmark_return
+excess_return
+sample_count
+```
+
+JoinQuant export batch shape:
+
+```text
+examples/joinquant_exports/
+├── baseline/
+├── ma_5_20/
+├── ma_10_60/
+└── ma_20_120/
+```
+
+JoinQuant export quality gate blocks exports that miss benchmark, fees,
+slippage, equity curve, trades, positions, strategy parameters, enough samples,
+or supported run kind.
+
+RQAlpha local execution is planned in
+[rqalpha_local_runner_plan.md](rqalpha_local_runner_plan.md). It should produce
+the same Quant Platform Export Contract before Loop Harness ingests it.
+
 ## Current Drill
 
 ```bash

@@ -11,6 +11,8 @@ from typing import Any
 from loop_harness.evidence.quant_drill import QuantDrillRunner
 from loop_harness.evidence.review_package import EvidenceReviewPackage
 from loop_harness.harness import EvidenceHarness
+from loop_harness.quant_data.batch import AShareBatchQuantRunner, AShareParameterGrid
+from loop_harness.quant_data.manifest import AShareSampleManifest
 from loop_harness.quant_data.models import AShareMarketDataSet
 from loop_harness.quant_data.pipeline import AShareQuantLoopPipeline
 from loop_harness.quant_data.providers import (
@@ -116,6 +118,13 @@ def register_evidence_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     quant_a_share_parser.add_argument("--slow-window", type=int, default=20)
     quant_a_share_parser.add_argument("--scenario", default="quant_a_share", dest="scenario_id")
     quant_a_share_parser.add_argument("--kind", default="historical", dest="run_kind")
+
+    quant_a_share_batch_parser = evidence_subparsers.add_parser("quant-a-share-batch")
+    quant_a_share_batch_parser.add_argument("--manifest", required=True)
+    quant_a_share_batch_parser.add_argument("--fast-windows", default="5,10,20")
+    quant_a_share_batch_parser.add_argument("--slow-windows", default="20,60,120")
+    quant_a_share_batch_parser.add_argument("--scenario", default="quant_a_share", dest="scenario_id")
+    quant_a_share_batch_parser.add_argument("--kind", default="historical", dest="run_kind")
 
 
 def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
@@ -354,8 +363,34 @@ def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
         )
         return 0
 
+    if args.evidence_command == "quant-a-share-batch":
+        try:
+            manifest = AShareSampleManifest.load(args.manifest)
+            grid = AShareParameterGrid(
+                fast_windows=_parse_int_list(args.fast_windows),
+                slow_windows=_parse_int_list(args.slow_windows),
+            )
+            batch_result = AShareBatchQuantRunner(harness).run_grid(
+                manifest,
+                grid=grid,
+                scenario_id=args.scenario_id,
+                run_kind=args.run_kind,
+            )
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(str(exc))
+            return 1
+        _print_json(batch_result.model_dump(mode="json"))
+        return 0
+
     print("Unknown evidence command")
     return 1
+
+
+def _parse_int_list(raw: str) -> list[int]:
+    values = [int(value.strip()) for value in raw.split(",") if value.strip()]
+    if not values:
+        raise ValueError("integer list cannot be empty")
+    return values
 
 
 def _a_share_dataset_from_args(args: argparse.Namespace) -> AShareMarketDataSet:

@@ -1,0 +1,26 @@
+{
+  "entries": [
+    {
+      "ts_code": "600519.SH",
+      "name": "贵州茅台",
+      "source_vendor": "tushare_pro_export",
+      "adjusted_mode": "qfq",
+      "start_date": "2020-01-01",
+      "end_date": "2024-12-31",
+      "decision_grade": true,
+      "license_note": "operator-provided licensed export; verify redistribution rights before committing raw data",
+      "file_path": "daily/600519.SH.csv"
+    },
+    {
+      "ts_code": "510300.SH",
+      "name": "沪深300ETF",
+      "source_vendor": "tushare_pro_export",
+      "adjusted_mode": "qfq",
+      "start_date": "2020-01-01",
+      "end_date": "2024-12-31",
+      "decision_grade": true,
+      "license_note": "operator-provided licensed export; verify redistribution rights before committing raw data",
+      "file_path": "daily/510300.SH.csv"
+    }
+  ]
+}
