@@ -15,6 +15,12 @@ from loop_harness.quant_data.batch import AShareBatchQuantRunner, AShareParamete
 from loop_harness.quant_data.manifest import AShareSampleManifest
 from loop_harness.quant_data.models import AShareMarketDataSet
 from loop_harness.quant_data.pipeline import AShareQuantLoopPipeline
+from loop_harness.quant_data.platform_export import (
+    JoinQuantBatchExportImporter,
+    JoinQuantExportAdapter,
+    QuantPlatformExport,
+    evaluate_joinquant_export_quality,
+)
 from loop_harness.quant_data.providers import (
     AShareStaticProvider,
     MarketDataProvider,
@@ -125,6 +131,16 @@ def register_evidence_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     quant_a_share_batch_parser.add_argument("--slow-windows", default="20,60,120")
     quant_a_share_batch_parser.add_argument("--scenario", default="quant_a_share", dest="scenario_id")
     quant_a_share_batch_parser.add_argument("--kind", default="historical", dest="run_kind")
+
+    joinquant_import_parser = evidence_subparsers.add_parser("joinquant-import")
+    joinquant_import_parser.add_argument("--export-dir", required=True)
+    joinquant_import_parser.add_argument("--workflow", required=True, dest="workflow_id")
+    joinquant_import_parser.add_argument("--scenario", default="quant_a_share", dest="scenario_id")
+
+    joinquant_batch_parser = evidence_subparsers.add_parser("joinquant-batch")
+    joinquant_batch_parser.add_argument("--batch-dir", required=True)
+    joinquant_batch_parser.add_argument("--workflow", required=True, dest="workflow_id")
+    joinquant_batch_parser.add_argument("--scenario", default="quant_a_share", dest="scenario_id")
 
 
 def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
@@ -380,6 +396,43 @@ def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
             print(str(exc))
             return 1
         _print_json(batch_result.model_dump(mode="json"))
+        return 0
+
+    if args.evidence_command == "joinquant-import":
+        try:
+            payload = JoinQuantExportAdapter().to_payload(
+                args.export_dir,
+                workflow_id=args.workflow_id,
+                scenario_id=args.scenario_id,
+            )
+            result = harness.ingest_payload(payload)
+            quality = evaluate_joinquant_export_quality(QuantPlatformExport.load(args.export_dir))
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(str(exc))
+            return 1
+        _print_json(
+            {
+                "run_id": result.run.run_id,
+                "workflow_id": result.run.workflow_id,
+                "scenario_id": result.run.scenario_id,
+                "recommendation": result.report.recommendation.value,
+                "summary": result.report.summary,
+                "quality": quality.model_dump(mode="json"),
+            }
+        )
+        return 0
+
+    if args.evidence_command == "joinquant-batch":
+        try:
+            joinquant_batch_result = JoinQuantBatchExportImporter(harness).import_batch(
+                args.batch_dir,
+                workflow_id=args.workflow_id,
+                scenario_id=args.scenario_id,
+            )
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(str(exc))
+            return 1
+        _print_json(joinquant_batch_result.model_dump(mode="json"))
         return 0
 
     print("Unknown evidence command")

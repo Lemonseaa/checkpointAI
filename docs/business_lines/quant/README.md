@@ -217,9 +217,78 @@ JoinQuant export quality gate blocks exports that miss benchmark, fees,
 slippage, equity curve, trades, positions, strategy parameters, enough samples,
 or supported run kind.
 
+Import one JoinQuant export:
+
+```bash
+loopharness evidence joinquant-import \
+  --export-dir examples/joinquant_exports/ma_5_20 \
+  --workflow joinquant_ma \
+  --scenario quant_a_share
+```
+
+Import a baseline-plus-candidates batch:
+
+```bash
+loopharness evidence joinquant-batch \
+  --batch-dir examples/joinquant_exports \
+  --workflow joinquant_batch \
+  --scenario quant_a_share
+```
+
+The batch output includes:
+
+```text
+baseline_run_id
+candidate_run_ids
+quality_reports
+comparison_reports
+chart
+curve_payload.equity_curves
+curve_payload.drawdown_curves
+paper_trading_discussion
+markdown
+```
+
 RQAlpha local execution is planned in
 [rqalpha_local_runner_plan.md](rqalpha_local_runner_plan.md). It should produce
 the same Quant Platform Export Contract before Loop Harness ingests it.
+
+## Strategy Proposals
+
+Loop Harness does not directly mutate live trading systems. A quant change
+starts as a structured `StrategyProposal`, then becomes an external backtest
+config draft.
+
+Supported proposal families:
+
+```text
+moving_average_crossover
+momentum
+mean_reversion
+```
+
+Required fields:
+
+```text
+scenario_id
+hypothesis
+strategy_type
+universe
+parameters
+reason
+expected_metric
+risk_constraints
+run_kind
+```
+
+`StrategyProposal` can be converted to `joinquant` or `rqalpha` config drafts.
+The external platform runs the test and exports evidence back through the Quant
+Platform Export Contract.
+
+TradingAgents should sit before this step as a research layer. It proposes
+structured strategy changes; it does not approve deployment or replace the
+evidence gate. See
+[tradingagents_research_layer_plan.md](tradingagents_research_layer_plan.md).
 
 ## Current Drill
 

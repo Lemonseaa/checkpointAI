@@ -95,8 +95,11 @@ class JoinQuantBatchImportResult(BaseModel):
 
     baseline_run_id: str
     candidate_run_ids: list[str]
+    quality_reports: dict[str, JoinQuantExportQualityReport]
     comparison_reports: list[EvidenceReport]
     chart: OptimizationChartPayload
+    curve_payload: dict[str, Any]
+    paper_trading_discussion: str
     markdown: str
 
 
@@ -221,6 +224,11 @@ class JoinQuantBatchExportImporter:
         baseline_dir = root / "baseline"
         if not baseline_dir.exists():
             raise ValueError("JoinQuant batch export requires a baseline/ directory")
+        exports_by_run_id: dict[str, QuantPlatformExport] = {}
+        quality_reports: dict[str, JoinQuantExportQualityReport] = {}
+        baseline_export = QuantPlatformExport.load(baseline_dir)
+        exports_by_run_id[baseline_export.metadata.run_id] = baseline_export
+        quality_reports[baseline_export.metadata.run_id] = evaluate_joinquant_export_quality(baseline_export)
         baseline_payload = self.adapter.to_payload(
             baseline_dir,
             workflow_id=workflow_id,
@@ -231,6 +239,9 @@ class JoinQuantBatchExportImporter:
         candidate_run_ids: list[str] = []
         comparisons: list[EvidenceReport] = []
         for candidate_dir in sorted(path for path in root.iterdir() if path.is_dir() and path.name != "baseline"):
+            candidate_export = QuantPlatformExport.load(candidate_dir)
+            exports_by_run_id[candidate_export.metadata.run_id] = candidate_export
+            quality_reports[candidate_export.metadata.run_id] = evaluate_joinquant_export_quality(candidate_export)
             payload = self.adapter.to_payload(
                 candidate_dir,
                 workflow_id=workflow_id,
@@ -241,12 +252,23 @@ class JoinQuantBatchExportImporter:
             candidate_run_ids.append(candidate_run_id)
             comparisons.append(self.harness.compare(baseline_run_id, candidate_run_id))
         chart = self.harness.optimization_chart_for_runs(baseline_run_id, candidate_run_ids)
+        curve_payload = build_joinquant_curve_payload(exports_by_run_id, baseline_run_id, candidate_run_ids)
+        paper_trading_discussion = _paper_trading_discussion(quality_reports, comparisons)
         return JoinQuantBatchImportResult(
             baseline_run_id=baseline_run_id,
             candidate_run_ids=candidate_run_ids,
+            quality_reports=quality_reports,
             comparison_reports=comparisons,
             chart=chart,
-            markdown=_batch_markdown(baseline_run_id, candidate_run_ids, comparisons),
+            curve_payload=curve_payload,
+            paper_trading_discussion=paper_trading_discussion,
+            markdown=_batch_markdown(
+                baseline_run_id,
+                candidate_run_ids,
+                comparisons,
+                quality_reports,
+                paper_trading_discussion,
+            ),
         )
 
 
@@ -285,6 +307,53 @@ def evaluate_joinquant_export_quality(export: QuantPlatformExport) -> JoinQuantE
     )
 
 
+def build_joinquant_curve_payload(
+    exports_by_run_id: dict[str, QuantPlatformExport],
+    baseline_run_id: str,
+    candidate_run_ids: list[str],
+) -> dict[str, Any]:
+    """Build equity and drawdown chart data for imported JoinQuant exports."""
+
+    equity_curves: list[dict[str, Any]] = []
+    drawdown_curves: list[dict[str, Any]] = []
+    ordered_run_ids = [baseline_run_id, *candidate_run_ids]
+    for run_id in ordered_run_ids:
+        export = exports_by_run_id.get(run_id)
+        if export is None:
+            continue
+        role = "baseline" if run_id == baseline_run_id else "candidate"
+        running_peak: float | None = None
+        for index, row in enumerate(export.equity_curve):
+            equity = _to_float(row.get("equity"))
+            if equity is None:
+                continue
+            running_peak = equity if running_peak is None else max(running_peak, equity)
+            drawdown = 0.0 if running_peak <= 0 else (running_peak - equity) / running_peak
+            point_date = row.get("date") or row.get("trade_date") or str(index)
+            equity_curves.append(
+                {
+                    "run_id": run_id,
+                    "role": role,
+                    "date": point_date,
+                    "equity": equity,
+                }
+            )
+            drawdown_curves.append(
+                {
+                    "run_id": run_id,
+                    "role": role,
+                    "date": point_date,
+                    "drawdown": drawdown,
+                }
+            )
+    return {
+        "baseline_run_id": baseline_run_id,
+        "candidate_run_ids": candidate_run_ids,
+        "equity_curves": equity_curves,
+        "drawdown_curves": drawdown_curves,
+    }
+
+
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8", newline="") as handle:
         return [dict(row) for row in csv.DictReader(handle)]
@@ -301,6 +370,15 @@ def _has_abnormal_equity_jump(rows: list[dict[str, str]]) -> bool:
             return True
         previous = equity
     return False
+
+
+def _to_float(raw: str | None) -> float | None:
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
 
 
 def _metric_schema() -> dict[str, dict[str, object]]:
@@ -329,6 +407,8 @@ def _batch_markdown(
     baseline_run_id: str,
     candidate_run_ids: list[str],
     comparisons: list[EvidenceReport],
+    quality_reports: dict[str, JoinQuantExportQualityReport],
+    paper_trading_discussion: str,
 ) -> str:
     lines = [
         "# JoinQuant Export Batch Report",
@@ -336,11 +416,58 @@ def _batch_markdown(
         f"Baseline: {baseline_run_id}",
         f"Candidates: {', '.join(candidate_run_ids)}",
         "",
-        "## Comparisons",
+        "## Quality",
     ]
+    for run_id, quality in quality_reports.items():
+        lines.append(
+            f"- {run_id}: status={quality.status}, sample_count={quality.sample_count}, "
+            f"blockers={quality.blockers}, warnings={quality.warnings}"
+        )
+    lines.extend(
+        [
+            "",
+            "## Paper Trading Discussion",
+            paper_trading_discussion,
+            "",
+        ]
+    )
+    lines.extend(
+        [
+        "## Comparisons",
+        ]
+    )
     for report in comparisons:
         lines.append(
             f"- {report.candidate_run_id}: recommendation={report.recommendation.value}, "
             f"summary={report.summary}"
         )
     return "\n".join(lines)
+
+
+def _paper_trading_discussion(
+    quality_reports: dict[str, JoinQuantExportQualityReport],
+    comparisons: list[EvidenceReport],
+) -> str:
+    blocked = [run_id for run_id, quality in quality_reports.items() if quality.status == "blocked"]
+    if blocked:
+        return (
+            "Do not discuss paper trading yet. The following JoinQuant exports failed evidence quality gates: "
+            f"{', '.join(blocked)}."
+        )
+    if not comparisons:
+        return "No candidate strategy was imported, so there is no paper-trading candidate to discuss."
+    candidates = [
+        report.candidate_run_id
+        for report in comparisons
+        if report.candidate_run_id is not None
+        and report.recommendation.value in {"approve", "continue_shadow"}
+    ]
+    if not candidates:
+        return (
+            "No candidate is strong enough for paper trading discussion. Keep generating historical evidence "
+            "or revise the strategy proposal."
+        )
+    return (
+        "Paper trading can be discussed for the strongest historical candidates, but this is not live-trading "
+        f"approval. Candidate(s) to review: {', '.join(candidates)}."
+    )

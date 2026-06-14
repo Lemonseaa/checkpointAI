@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from loop_harness.cli import main
+from tests.quant_data.helpers import write_joinquant_export
 
 
 def test_quant_a_share_loop_demo_cli_outputs_evidence_ids(tmp_path, capsys) -> None:  # type: ignore[no-untyped-def]
@@ -97,3 +98,58 @@ def test_quant_a_share_batch_cli_runs_manifest_grid(tmp_path: Path, capsys) -> N
     assert payload["run_count"] == 2
     assert payload["chart_payload"]["parameter_heatmap"]
     assert "贵州茅台" in payload["markdown"]
+
+
+def test_joinquant_import_cli_ingests_single_export(tmp_path: Path, capsys) -> None:
+    export_dir = tmp_path / "joinquant" / "ma_5_20"
+    write_joinquant_export(export_dir, run_id="jq_ma_5_20")
+
+    exit_code = main(
+        [
+            "--db",
+            str(tmp_path / "jq.db"),
+            "evidence",
+            "joinquant-import",
+            "--export-dir",
+            str(export_dir),
+            "--workflow",
+            "joinquant_ma",
+            "--scenario",
+            "quant_a_share",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["run_id"] == "jq_ma_5_20"
+    assert payload["recommendation"] in {"approve", "continue_shadow", "inconclusive", "reject"}
+    assert payload["quality"]["status"] == "valid"
+
+
+def test_joinquant_batch_cli_outputs_review_payload(tmp_path: Path, capsys) -> None:
+    batch_dir = tmp_path / "joinquant_exports"
+    write_joinquant_export(batch_dir / "baseline", run_id="jq_baseline", total_return=0.1, sharpe=0.8)
+    write_joinquant_export(batch_dir / "ma_5_20", run_id="jq_ma_5_20", total_return=0.18, sharpe=1.2)
+
+    exit_code = main(
+        [
+            "--db",
+            str(tmp_path / "jq_batch.db"),
+            "evidence",
+            "joinquant-batch",
+            "--batch-dir",
+            str(batch_dir),
+            "--workflow",
+            "joinquant_batch",
+            "--scenario",
+            "quant_a_share",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["baseline_run_id"] == "jq_baseline"
+    assert payload["candidate_run_ids"] == ["jq_ma_5_20"]
+    assert payload["chart"]["best_candidate_run_id"] == "jq_ma_5_20"
+    assert "paper_trading_discussion" in payload
+    assert payload["curve_payload"]["equity_curves"]
