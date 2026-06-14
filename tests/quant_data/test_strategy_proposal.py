@@ -144,3 +144,53 @@ def test_strategy_proposal_to_config_cli_reads_json(tmp_path, capsys) -> None:  
     assert payload["strategy_type"] == "moving_average_crossover"
     assert payload["parameters"]["fast_window"] == 5
     assert payload["metadata"]["source_proposal_id"]
+
+
+def test_strategy_proposal_to_config_cli_reads_batch_json(tmp_path, capsys) -> None:  # type: ignore[no-untyped-def]
+    proposal_path = tmp_path / "proposals.json"
+    proposal_path.write_text(
+        json.dumps(
+            [
+                {
+                    "scenario_id": "quant_a_share",
+                    "hypothesis": "A 5/20 crossover may improve trend capture.",
+                    "strategy_type": "moving_average_crossover",
+                    "universe": ["600519.SH"],
+                    "parameters": {"fast_window": 5, "slow_window": 20},
+                    "reason": "Test a faster trend filter.",
+                    "expected_metric": "sharpe",
+                },
+                {
+                    "scenario_id": "quant_a_share",
+                    "hypothesis": "A 20-day momentum filter may reduce weak names.",
+                    "strategy_type": "momentum",
+                    "universe": ["510300.SH"],
+                    "parameters": {"lookback_window": 20, "top_n": 1},
+                    "reason": "Test simple momentum as a challenger.",
+                    "expected_metric": "excess_return",
+                },
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "--db",
+            str(tmp_path / "proposal.db"),
+            "evidence",
+            "strategy-proposal-to-config",
+            "--path",
+            str(proposal_path),
+            "--platform",
+            "joinquant",
+            "--batch",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["count"] == 2
+    assert [item["platform"] for item in payload["configs"]] == ["joinquant", "joinquant"]
+    assert payload["configs"][1]["strategy_type"] == "momentum"

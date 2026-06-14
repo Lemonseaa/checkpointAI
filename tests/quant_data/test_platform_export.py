@@ -12,9 +12,11 @@ from loop_harness.quant_data.platform_export import (
     JoinQuantBatchExportImporter,
     JoinQuantExportAdapter,
     QuantPlatformExport,
+    diagnose_joinquant_export,
     evaluate_joinquant_export_quality,
+    normalize_joinquant_export,
 )
-from tests.quant_data.helpers import write_joinquant_export
+from tests.quant_data.helpers import write_joinquant_alias_export, write_joinquant_export
 
 
 def test_quant_platform_export_loads_required_files(tmp_path: Path) -> None:
@@ -30,6 +32,21 @@ def test_quant_platform_export_loads_required_files(tmp_path: Path) -> None:
     assert export.equity_curve[0]["equity"] == "1.0"
     assert len(export.trades) == 1
     assert len(export.positions) == 1
+
+
+def test_quant_platform_export_normalizes_common_joinquant_aliases(tmp_path: Path) -> None:
+    export_dir = tmp_path / "alias"
+    write_joinquant_alias_export(export_dir, run_id="jq_alias")
+
+    export = QuantPlatformExport.load(export_dir)
+
+    assert export.equity_curve[0]["date"] == "2020-01-01"
+    assert export.equity_curve[0]["equity"] == "1.0"
+    assert export.trades[0]["datetime"] == "2020-01-02"
+    assert export.trades[0]["symbol"] == "600519.XSHG"
+    assert export.trades[0]["side"] == "buy"
+    assert export.positions[0]["date"] == "2020-01-02"
+    assert export.positions[0]["amount"] == "100"
 
 
 def test_quant_platform_export_rejects_missing_required_files(tmp_path: Path) -> None:
@@ -91,4 +108,33 @@ def test_joinquant_batch_importer_compares_candidates_against_baseline(tmp_path:
     assert set(result.candidate_run_ids) == {"jq_ma_5_20", "jq_ma_10_60"}
     assert len(result.comparison_reports) == 2
     assert result.chart.best_candidate_run_id in result.candidate_run_ids
+    assert result.import_readiness_summary["ready_count"] == 3
+    assert result.import_readiness_summary["blocked_count"] == 0
     assert "jq_ma_5_20" in result.markdown
+
+
+def test_joinquant_diagnose_reports_alias_mappings_and_readiness(tmp_path: Path) -> None:
+    export_dir = tmp_path / "alias"
+    write_joinquant_alias_export(export_dir, run_id="jq_alias")
+
+    diagnosis = diagnose_joinquant_export(export_dir)
+
+    assert diagnosis.run_id == "jq_alias"
+    assert diagnosis.ready_to_import is True
+    assert diagnosis.repairable is True
+    assert diagnosis.field_mappings["equity_curve.csv"]["portfolio_value"] == "equity"
+    assert diagnosis.field_mappings["trades.csv"]["code"] == "symbol"
+
+
+def test_joinquant_normalize_writes_standard_contract_copy(tmp_path: Path) -> None:
+    export_dir = tmp_path / "alias"
+    output_dir = tmp_path / "normalized"
+    write_joinquant_alias_export(export_dir, run_id="jq_alias")
+
+    result = normalize_joinquant_export(export_dir, output_dir)
+    export = QuantPlatformExport.load(output_dir)
+
+    assert result.ready_to_import is True
+    assert export.metadata.run_id == "jq_alias"
+    assert export.equity_curve[0] == {"date": "2020-01-01", "equity": "1.0"}
+    assert export.trades[0]["symbol"] == "600519.XSHG"

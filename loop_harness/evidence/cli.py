@@ -19,7 +19,9 @@ from loop_harness.quant_data.platform_export import (
     JoinQuantBatchExportImporter,
     JoinQuantExportAdapter,
     QuantPlatformExport,
+    diagnose_joinquant_export,
     evaluate_joinquant_export_quality,
+    normalize_joinquant_export,
 )
 from loop_harness.quant_data.providers import (
     AShareStaticProvider,
@@ -136,6 +138,13 @@ def register_evidence_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     joinquant_validate_parser = evidence_subparsers.add_parser("joinquant-validate")
     joinquant_validate_parser.add_argument("--export-dir", required=True)
 
+    joinquant_diagnose_parser = evidence_subparsers.add_parser("joinquant-diagnose")
+    joinquant_diagnose_parser.add_argument("--export-dir", required=True)
+
+    joinquant_normalize_parser = evidence_subparsers.add_parser("joinquant-normalize")
+    joinquant_normalize_parser.add_argument("--export-dir", required=True)
+    joinquant_normalize_parser.add_argument("--output-dir", required=True)
+
     joinquant_import_parser = evidence_subparsers.add_parser("joinquant-import")
     joinquant_import_parser.add_argument("--export-dir", required=True)
     joinquant_import_parser.add_argument("--workflow", required=True, dest="workflow_id")
@@ -149,6 +158,7 @@ def register_evidence_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     strategy_config_parser = evidence_subparsers.add_parser("strategy-proposal-to-config")
     strategy_config_parser.add_argument("--path", required=True)
     strategy_config_parser.add_argument("--platform", required=True, choices=["joinquant", "rqalpha"])
+    strategy_config_parser.add_argument("--batch", action="store_true")
 
 
 def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
@@ -425,6 +435,20 @@ def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
         )
         return 0
 
+    if args.evidence_command == "joinquant-diagnose":
+        diagnosis = diagnose_joinquant_export(args.export_dir)
+        _print_json(diagnosis.model_dump(mode="json"))
+        return 0
+
+    if args.evidence_command == "joinquant-normalize":
+        try:
+            diagnosis = normalize_joinquant_export(args.export_dir, args.output_dir)
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(str(exc))
+            return 1
+        _print_json(diagnosis.model_dump(mode="json"))
+        return 0
+
     if args.evidence_command == "joinquant-import":
         try:
             payload = JoinQuantExportAdapter().to_payload(
@@ -464,7 +488,23 @@ def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
 
     if args.evidence_command == "strategy-proposal-to-config":
         try:
-            proposal = StrategyProposal.model_validate_json(Path(args.path).read_text(encoding="utf-8"))
+            raw = json.loads(Path(args.path).read_text(encoding="utf-8"))
+            if args.batch:
+                if not isinstance(raw, list):
+                    raise ValueError("--batch requires a JSON list of strategy proposals")
+                configs = [
+                    proposal_to_backtest_config(StrategyProposal.model_validate(item), platform=args.platform)
+                    for item in raw
+                ]
+                _print_json(
+                    {
+                        "count": len(configs),
+                        "platform": args.platform,
+                        "configs": [config.model_dump(mode="json") for config in configs],
+                    }
+                )
+                return 0
+            proposal = StrategyProposal.model_validate(raw)
             config = proposal_to_backtest_config(proposal, platform=args.platform)
         except (OSError, ValueError, RuntimeError) as exc:
             print(str(exc))

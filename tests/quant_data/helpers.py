@@ -96,3 +96,37 @@ def write_joinquant_export(
         [{"date": "2020-01-02", "symbol": "600519.XSHG", "amount": 100, "value": 10000}],
     )
     (path / "logs.txt").write_text("JoinQuant backtest completed\n", encoding="utf-8")
+
+
+def write_joinquant_alias_export(path: Path, *, run_id: str) -> None:
+    """Write a JoinQuant-like export using common non-standard column names."""
+
+    write_joinquant_export(path, run_id=run_id)
+    write_csv(
+        path / "equity_curve.csv",
+        ["trade_dt", "portfolio_value"],
+        [
+            {"trade_dt": "2020-01-01", "portfolio_value": 1.0},
+            {"trade_dt": "2020-01-02", "portfolio_value": 1.08},
+            {"trade_dt": "2020-01-03", "portfolio_value": 1.03},
+        ],
+    )
+    write_csv(
+        path / "trades.csv",
+        ["trade_dt", "code", "action", "price", "quantity", "amount"],
+        [
+            {
+                "trade_dt": "2020-01-02",
+                "code": "600519.XSHG",
+                "action": "buy",
+                "price": 100,
+                "quantity": 100,
+                "amount": 10000,
+            }
+        ],
+    )
+    write_csv(
+        path / "positions.csv",
+        ["trade_dt", "code", "shares", "market_value"],
+        [{"trade_dt": "2020-01-02", "code": "600519.XSHG", "shares": 100, "market_value": 10000}],
+    )

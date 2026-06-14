@@ -224,6 +224,21 @@ loopharness evidence joinquant-validate \
   --export-dir examples/joinquant_exports/ma_5_20
 ```
 
+Diagnose common real-export issues and field aliases:
+
+```bash
+loopharness evidence joinquant-diagnose \
+  --export-dir examples/joinquant_exports/ma_5_20
+```
+
+Normalize a repairable export into the standard contract:
+
+```bash
+loopharness evidence joinquant-normalize \
+  --export-dir examples/joinquant_exports/ma_5_20 \
+  --output-dir /private/path/joinquant_normalized/ma_5_20
+```
+
 Import one JoinQuant export:
 
 ```bash
@@ -253,6 +268,7 @@ baseline_run_id
 candidate_run_ids
 quality_reports
 comparison_reports
+import_readiness_summary
 chart
 curve_payload.equity_curves
 curve_payload.drawdown_curves
@@ -304,6 +320,15 @@ loopharness evidence strategy-proposal-to-config \
   --platform joinquant
 ```
 
+Convert a batch of proposal JSON objects:
+
+```bash
+loopharness evidence strategy-proposal-to-config \
+  --path proposals.json \
+  --platform joinquant \
+  --batch
+```
+
 TradingAgents should sit before this step as a research layer. It proposes
 structured strategy changes; it does not approve deployment or replace the
 evidence gate. See
@@ -311,6 +336,9 @@ evidence gate. See
 
 The current JoinQuant risk review is documented in
 [reports/joinquant_integration_risk_review.md](reports/joinquant_integration_risk_review.md).
+
+The first real-data drill should follow
+[reports/joinquant_real_data_drill_plan.md](reports/joinquant_real_data_drill_plan.md).
 
 ## Current Drill
 

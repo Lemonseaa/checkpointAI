@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -90,12 +91,27 @@ class JoinQuantExportQualityReport(BaseModel):
     sample_count: int
 
 
+class JoinQuantExportDiagnosis(BaseModel):
+    """Human-readable diagnosis for one JoinQuant export directory."""
+
+    export_dir: str
+    run_id: str | None = None
+    ready_to_import: bool
+    repairable: bool
+    missing_files: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    field_mappings: dict[str, dict[str, str]] = Field(default_factory=dict)
+    recommendations: list[str] = Field(default_factory=list)
+
+
 class JoinQuantBatchImportResult(BaseModel):
     """Result from importing a baseline plus candidate JoinQuant exports."""
 
     baseline_run_id: str
     candidate_run_ids: list[str]
     quality_reports: dict[str, JoinQuantExportQualityReport]
+    import_readiness_summary: dict[str, Any]
     comparison_reports: list[EvidenceReport]
     chart: OptimizationChartPayload
     curve_payload: dict[str, Any]
@@ -226,6 +242,7 @@ class JoinQuantBatchExportImporter:
         candidate_exports = loaded_exports[1:]
         exports_by_run_id = {export.metadata.run_id: export for _, export, _ in loaded_exports}
         quality_reports = {export.metadata.run_id: quality for _, export, quality in loaded_exports}
+        readiness_summary = _import_readiness_summary(loaded_exports)
         baseline_payload = self.adapter.to_payload(
             baseline_export.export_dir,
             workflow_id=workflow_id,
@@ -252,6 +269,7 @@ class JoinQuantBatchExportImporter:
             baseline_run_id=baseline_run_id,
             candidate_run_ids=candidate_run_ids,
             quality_reports=quality_reports,
+            import_readiness_summary=readiness_summary,
             comparison_reports=comparisons,
             chart=chart,
             curve_payload=curve_payload,
@@ -264,6 +282,79 @@ class JoinQuantBatchExportImporter:
                 paper_trading_discussion,
             ),
         )
+
+
+def diagnose_joinquant_export(export_dir: str | Path) -> JoinQuantExportDiagnosis:
+    """Diagnose whether one JoinQuant export can be imported or normalized."""
+
+    path = Path(export_dir)
+    missing = sorted(file_name for file_name in QuantPlatformExport.REQUIRED_FILES if not (path / file_name).exists())
+    field_mappings = {
+        "equity_curve.csv": _field_mappings_for_csv(path / "equity_curve.csv"),
+        "trades.csv": _field_mappings_for_csv(path / "trades.csv"),
+        "positions.csv": _field_mappings_for_csv(path / "positions.csv"),
+    }
+    field_mappings = {file_name: mapping for file_name, mapping in field_mappings.items() if mapping}
+    if missing:
+        return JoinQuantExportDiagnosis(
+            export_dir=str(path),
+            ready_to_import=False,
+            repairable=False,
+            missing_files=missing,
+            blockers=[f"missing_required_file:{file_name}" for file_name in missing],
+            field_mappings=field_mappings,
+            recommendations=["Re-export the missing files before import."],
+        )
+    try:
+        export = QuantPlatformExport.load(path)
+        quality = evaluate_joinquant_export_quality(export)
+    except (OSError, ValueError) as exc:
+        return JoinQuantExportDiagnosis(
+            export_dir=str(path),
+            ready_to_import=False,
+            repairable=False,
+            blockers=[str(exc)],
+            field_mappings=field_mappings,
+            recommendations=["Fix the export structure or regenerate the JoinQuant export."],
+        )
+    return JoinQuantExportDiagnosis(
+        export_dir=str(path),
+        run_id=export.metadata.run_id,
+        ready_to_import=quality.status != "blocked",
+        repairable=not missing,
+        blockers=quality.blockers,
+        warnings=quality.warnings,
+        field_mappings=field_mappings,
+        recommendations=_diagnosis_recommendations(quality, field_mappings),
+    )
+
+
+def normalize_joinquant_export(export_dir: str | Path, output_dir: str | Path) -> JoinQuantExportDiagnosis:
+    """Write a standard Quant Platform Export Contract copy."""
+
+    source = Path(export_dir)
+    target = Path(output_dir)
+    diagnosis = diagnose_joinquant_export(source)
+    if not diagnosis.repairable:
+        raise ValueError("JoinQuant export is not repairable: " + "; ".join(diagnosis.blockers))
+    target.mkdir(parents=True, exist_ok=True)
+    for file_name in ["metadata.json", "metrics.json"]:
+        shutil.copyfile(source / file_name, target / file_name)
+    logs_path = source / "logs.txt"
+    if logs_path.exists():
+        shutil.copyfile(logs_path, target / "logs.txt")
+    _write_csv(target / "equity_curve.csv", ["date", "equity"], _read_csv(source / "equity_curve.csv"))
+    _write_csv(
+        target / "trades.csv",
+        ["datetime", "symbol", "side", "price", "amount", "value"],
+        _read_csv(source / "trades.csv"),
+    )
+    _write_csv(
+        target / "positions.csv",
+        ["date", "symbol", "amount", "value"],
+        _read_csv(source / "positions.csv"),
+    )
+    return diagnose_joinquant_export(target)
 
 
 def preflight_joinquant_batch(
@@ -379,7 +470,72 @@ def build_joinquant_curve_payload(
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8", newline="") as handle:
-        return [dict(row) for row in csv.DictReader(handle)]
+        rows = [dict(row) for row in csv.DictReader(handle)]
+    return [_normalize_csv_row(path.name, row) for row in rows]
+
+
+def _write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, str]]) -> None:
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def _field_mappings_for_csv(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        fieldnames = reader.fieldnames or []
+    mapping: dict[str, str] = {}
+    used: set[str] = set()
+    for standard, aliases in _csv_aliases(path.name).items():
+        for alias in aliases:
+            if alias in fieldnames and alias not in used:
+                used.add(alias)
+                if alias != standard:
+                    mapping[alias] = standard
+                break
+    return mapping
+
+
+def _normalize_csv_row(file_name: str, row: dict[str, str]) -> dict[str, str]:
+    normalized: dict[str, str] = {}
+    used: set[str] = set()
+    for standard, aliases in _csv_aliases(file_name).items():
+        for alias in aliases:
+            value = row.get(alias)
+            if value is not None and alias not in used:
+                normalized[standard] = value
+                used.add(alias)
+                break
+    return normalized or row
+
+
+def _csv_aliases(file_name: str) -> dict[str, list[str]]:
+    if file_name == "equity_curve.csv":
+        return {
+            "date": ["date", "trade_date", "trade_dt", "datetime"],
+            "equity": ["equity", "portfolio_value", "total_value", "net_value"],
+        }
+    if file_name == "trades.csv":
+        return {
+            "datetime": ["datetime", "trade_dt", "trade_date", "date"],
+            "symbol": ["symbol", "code", "security", "order_book_id"],
+            "side": ["side", "action", "direction"],
+            "price": ["price", "avg_price"],
+            "amount": ["quantity", "shares", "amount"],
+            "value": ["value", "amount", "turnover"],
+        }
+    if file_name == "positions.csv":
+        return {
+            "date": ["date", "trade_date", "trade_dt", "datetime"],
+            "symbol": ["symbol", "code", "security", "order_book_id"],
+            "amount": ["shares", "quantity", "amount"],
+            "value": ["value", "market_value", "portfolio_value"],
+        }
+    return {}
 
 
 def _has_abnormal_equity_jump(rows: list[dict[str, str]]) -> bool:
@@ -465,6 +621,39 @@ def _batch_markdown(
             f"summary={report.summary}"
         )
     return "\n".join(lines)
+
+
+def _import_readiness_summary(
+    loaded_exports: list[tuple[Path, QuantPlatformExport, JoinQuantExportQualityReport]],
+) -> dict[str, Any]:
+    blocked_reasons: dict[str, int] = {}
+    ready_count = 0
+    for _path, _export, quality in loaded_exports:
+        if quality.status == "blocked":
+            for blocker in quality.blockers:
+                blocked_reasons[blocker] = blocked_reasons.get(blocker, 0) + 1
+        else:
+            ready_count += 1
+    return {
+        "ready_count": ready_count,
+        "blocked_count": len(loaded_exports) - ready_count,
+        "blocked_reasons": blocked_reasons,
+        "total_count": len(loaded_exports),
+    }
+
+
+def _diagnosis_recommendations(
+    quality: JoinQuantExportQualityReport,
+    field_mappings: dict[str, dict[str, str]],
+) -> list[str]:
+    recommendations: list[str] = []
+    if field_mappings:
+        recommendations.append("Run joinquant-normalize to write a standard contract copy.")
+    if quality.blockers:
+        recommendations.append("Fix quality blockers before batch import.")
+    if not recommendations:
+        recommendations.append("Export is ready to import.")
+    return recommendations
 
 
 def _paper_trading_discussion(

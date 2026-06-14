@@ -7,7 +7,7 @@ from pathlib import Path
 
 from loop_harness.cli import main
 from loop_harness.harness import EvidenceHarness
-from tests.quant_data.helpers import write_joinquant_export
+from tests.quant_data.helpers import write_joinquant_alias_export, write_joinquant_export
 
 
 def test_quant_a_share_loop_demo_cli_outputs_evidence_ids(tmp_path, capsys) -> None:  # type: ignore[no-untyped-def]
@@ -150,6 +150,52 @@ def test_joinquant_validate_cli_reports_quality_without_ingesting(tmp_path: Path
     assert EvidenceHarness(db_path).list_runs() == []
 
 
+def test_joinquant_diagnose_cli_reports_alias_mappings(tmp_path: Path, capsys) -> None:
+    export_dir = tmp_path / "joinquant" / "alias"
+    write_joinquant_alias_export(export_dir, run_id="jq_alias")
+
+    exit_code = main(
+        [
+            "--db",
+            str(tmp_path / "jq_diag.db"),
+            "evidence",
+            "joinquant-diagnose",
+            "--export-dir",
+            str(export_dir),
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["run_id"] == "jq_alias"
+    assert payload["ready_to_import"] is True
+    assert payload["field_mappings"]["equity_curve.csv"]["portfolio_value"] == "equity"
+
+
+def test_joinquant_normalize_cli_writes_standard_copy(tmp_path: Path, capsys) -> None:
+    export_dir = tmp_path / "joinquant" / "alias"
+    output_dir = tmp_path / "joinquant" / "normalized"
+    write_joinquant_alias_export(export_dir, run_id="jq_alias")
+
+    exit_code = main(
+        [
+            "--db",
+            str(tmp_path / "jq_norm.db"),
+            "evidence",
+            "joinquant-normalize",
+            "--export-dir",
+            str(export_dir),
+            "--output-dir",
+            str(output_dir),
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ready_to_import"] is True
+    assert (output_dir / "equity_curve.csv").read_text(encoding="utf-8").splitlines()[0] == "date,equity"
+
+
 def test_joinquant_batch_cli_outputs_review_payload(tmp_path: Path, capsys) -> None:
     batch_dir = tmp_path / "joinquant_exports"
     write_joinquant_export(batch_dir / "baseline", run_id="jq_baseline", total_return=0.1, sharpe=0.8)
@@ -176,6 +222,7 @@ def test_joinquant_batch_cli_outputs_review_payload(tmp_path: Path, capsys) -> N
     assert payload["candidate_run_ids"] == ["jq_ma_5_20"]
     assert payload["chart"]["best_candidate_run_id"] == "jq_ma_5_20"
     assert "paper_trading_discussion" in payload
+    assert payload["import_readiness_summary"]["ready_count"] == 2
     assert payload["curve_payload"]["equity_curves"]
 
 
