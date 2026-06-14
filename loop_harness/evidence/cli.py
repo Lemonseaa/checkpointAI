@@ -27,6 +27,7 @@ from loop_harness.quant_data.providers import (
     TushareDailyProvider,
     VendorCSVAShareProvider,
 )
+from loop_harness.quant_data.strategy_proposal import StrategyProposal, proposal_to_backtest_config
 
 
 def register_evidence_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -132,6 +133,9 @@ def register_evidence_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     quant_a_share_batch_parser.add_argument("--scenario", default="quant_a_share", dest="scenario_id")
     quant_a_share_batch_parser.add_argument("--kind", default="historical", dest="run_kind")
 
+    joinquant_validate_parser = evidence_subparsers.add_parser("joinquant-validate")
+    joinquant_validate_parser.add_argument("--export-dir", required=True)
+
     joinquant_import_parser = evidence_subparsers.add_parser("joinquant-import")
     joinquant_import_parser.add_argument("--export-dir", required=True)
     joinquant_import_parser.add_argument("--workflow", required=True, dest="workflow_id")
@@ -141,6 +145,10 @@ def register_evidence_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     joinquant_batch_parser.add_argument("--batch-dir", required=True)
     joinquant_batch_parser.add_argument("--workflow", required=True, dest="workflow_id")
     joinquant_batch_parser.add_argument("--scenario", default="quant_a_share", dest="scenario_id")
+
+    strategy_config_parser = evidence_subparsers.add_parser("strategy-proposal-to-config")
+    strategy_config_parser.add_argument("--path", required=True)
+    strategy_config_parser.add_argument("--platform", required=True, choices=["joinquant", "rqalpha"])
 
 
 def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
@@ -398,6 +406,25 @@ def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
         _print_json(batch_result.model_dump(mode="json"))
         return 0
 
+    if args.evidence_command == "joinquant-validate":
+        try:
+            export = QuantPlatformExport.load(args.export_dir)
+            quality = evaluate_joinquant_export_quality(export)
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(str(exc))
+            return 1
+        _print_json(
+            {
+                "run_id": export.metadata.run_id,
+                "platform": export.metadata.platform,
+                "strategy_name": export.metadata.strategy_name,
+                "export_dir": str(export.export_dir),
+                "quality": quality.model_dump(mode="json"),
+                "metrics": export.metrics,
+            }
+        )
+        return 0
+
     if args.evidence_command == "joinquant-import":
         try:
             payload = JoinQuantExportAdapter().to_payload(
@@ -433,6 +460,16 @@ def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
             print(str(exc))
             return 1
         _print_json(joinquant_batch_result.model_dump(mode="json"))
+        return 0
+
+    if args.evidence_command == "strategy-proposal-to-config":
+        try:
+            proposal = StrategyProposal.model_validate_json(Path(args.path).read_text(encoding="utf-8"))
+            config = proposal_to_backtest_config(proposal, platform=args.platform)
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(str(exc))
+            return 1
+        _print_json(config.model_dump(mode="json"))
         return 0
 
     print("Unknown evidence command")

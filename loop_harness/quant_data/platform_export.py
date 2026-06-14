@@ -221,16 +221,13 @@ class JoinQuantBatchExportImporter:
         """Import `baseline/` plus candidate subdirectories."""
 
         root = Path(batch_dir)
-        baseline_dir = root / "baseline"
-        if not baseline_dir.exists():
-            raise ValueError("JoinQuant batch export requires a baseline/ directory")
-        exports_by_run_id: dict[str, QuantPlatformExport] = {}
-        quality_reports: dict[str, JoinQuantExportQualityReport] = {}
-        baseline_export = QuantPlatformExport.load(baseline_dir)
-        exports_by_run_id[baseline_export.metadata.run_id] = baseline_export
-        quality_reports[baseline_export.metadata.run_id] = evaluate_joinquant_export_quality(baseline_export)
+        loaded_exports = preflight_joinquant_batch(root)
+        baseline_export = loaded_exports[0][1]
+        candidate_exports = loaded_exports[1:]
+        exports_by_run_id = {export.metadata.run_id: export for _, export, _ in loaded_exports}
+        quality_reports = {export.metadata.run_id: quality for _, export, quality in loaded_exports}
         baseline_payload = self.adapter.to_payload(
-            baseline_dir,
+            baseline_export.export_dir,
             workflow_id=workflow_id,
             scenario_id=scenario_id,
         )
@@ -238,10 +235,7 @@ class JoinQuantBatchExportImporter:
         baseline_run_id = str(baseline_payload["run_id"])
         candidate_run_ids: list[str] = []
         comparisons: list[EvidenceReport] = []
-        for candidate_dir in sorted(path for path in root.iterdir() if path.is_dir() and path.name != "baseline"):
-            candidate_export = QuantPlatformExport.load(candidate_dir)
-            exports_by_run_id[candidate_export.metadata.run_id] = candidate_export
-            quality_reports[candidate_export.metadata.run_id] = evaluate_joinquant_export_quality(candidate_export)
+        for candidate_dir, _candidate_export, _quality in candidate_exports:
             payload = self.adapter.to_payload(
                 candidate_dir,
                 workflow_id=workflow_id,
@@ -270,6 +264,35 @@ class JoinQuantBatchExportImporter:
                 paper_trading_discussion,
             ),
         )
+
+
+def preflight_joinquant_batch(
+    batch_dir: str | Path,
+) -> list[tuple[Path, QuantPlatformExport, JoinQuantExportQualityReport]]:
+    """Load and quality-check a JoinQuant batch before any evidence is stored."""
+
+    root = Path(batch_dir)
+    baseline_dir = root / "baseline"
+    if not baseline_dir.exists():
+        raise ValueError("JoinQuant batch preflight failed: missing baseline/ directory")
+    candidate_dirs = sorted(path for path in root.iterdir() if path.is_dir() and path.name != "baseline")
+    if not candidate_dirs:
+        raise ValueError("JoinQuant batch preflight failed: at least one candidate directory is required")
+    errors: list[str] = []
+    loaded: list[tuple[Path, QuantPlatformExport, JoinQuantExportQualityReport]] = []
+    for export_dir in [baseline_dir, *candidate_dirs]:
+        try:
+            export = QuantPlatformExport.load(export_dir)
+            quality = evaluate_joinquant_export_quality(export)
+        except (OSError, ValueError) as exc:
+            errors.append(f"{export_dir.name}: {exc}")
+            continue
+        if quality.status == "blocked":
+            errors.append(f"{export_dir.name}: blocked quality gates {quality.blockers}")
+        loaded.append((export_dir, export, quality))
+    if errors:
+        raise ValueError("JoinQuant batch preflight failed: " + "; ".join(errors))
+    return loaded
 
 
 def evaluate_joinquant_export_quality(export: QuantPlatformExport) -> JoinQuantExportQualityReport:

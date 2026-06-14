@@ -217,6 +217,13 @@ JoinQuant export quality gate blocks exports that miss benchmark, fees,
 slippage, equity curve, trades, positions, strategy parameters, enough samples,
 or supported run kind.
 
+Validate one JoinQuant export without writing to the evidence database:
+
+```bash
+loopharness evidence joinquant-validate \
+  --export-dir examples/joinquant_exports/ma_5_20
+```
+
 Import one JoinQuant export:
 
 ```bash
@@ -234,6 +241,10 @@ loopharness evidence joinquant-batch \
   --workflow joinquant_batch \
   --scenario quant_a_share
 ```
+
+Batch import performs preflight validation before writing any evidence. If one
+candidate is structurally invalid or blocked by quality gates, no run in the
+batch is stored.
 
 The batch output includes:
 
@@ -285,10 +296,21 @@ run_kind
 The external platform runs the test and exports evidence back through the Quant
 Platform Export Contract.
 
+Convert a proposal JSON file:
+
+```bash
+loopharness evidence strategy-proposal-to-config \
+  --path proposal.json \
+  --platform joinquant
+```
+
 TradingAgents should sit before this step as a research layer. It proposes
 structured strategy changes; it does not approve deployment or replace the
 evidence gate. See
 [tradingagents_research_layer_plan.md](tradingagents_research_layer_plan.md).
+
+The current JoinQuant risk review is documented in
+[reports/joinquant_integration_risk_review.md](reports/joinquant_integration_risk_review.md).
 
 ## Current Drill
 

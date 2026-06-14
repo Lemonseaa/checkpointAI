@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from loop_harness.cli import main
+from loop_harness.harness import EvidenceHarness
 from tests.quant_data.helpers import write_joinquant_export
 
 
@@ -126,6 +127,29 @@ def test_joinquant_import_cli_ingests_single_export(tmp_path: Path, capsys) -> N
     assert payload["quality"]["status"] == "valid"
 
 
+def test_joinquant_validate_cli_reports_quality_without_ingesting(tmp_path: Path, capsys) -> None:
+    db_path = tmp_path / "jq_validate.db"
+    export_dir = tmp_path / "joinquant" / "ma_5_20"
+    write_joinquant_export(export_dir, run_id="jq_ma_5_20")
+
+    exit_code = main(
+        [
+            "--db",
+            str(db_path),
+            "evidence",
+            "joinquant-validate",
+            "--export-dir",
+            str(export_dir),
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["run_id"] == "jq_ma_5_20"
+    assert payload["quality"]["status"] == "valid"
+    assert EvidenceHarness(db_path).list_runs() == []
+
+
 def test_joinquant_batch_cli_outputs_review_payload(tmp_path: Path, capsys) -> None:
     batch_dir = tmp_path / "joinquant_exports"
     write_joinquant_export(batch_dir / "baseline", run_id="jq_baseline", total_return=0.1, sharpe=0.8)
@@ -153,3 +177,33 @@ def test_joinquant_batch_cli_outputs_review_payload(tmp_path: Path, capsys) -> N
     assert payload["chart"]["best_candidate_run_id"] == "jq_ma_5_20"
     assert "paper_trading_discussion" in payload
     assert payload["curve_payload"]["equity_curves"]
+
+
+def test_joinquant_batch_cli_preflight_blocks_partial_import(tmp_path: Path, capsys) -> None:
+    db_path = tmp_path / "jq_bad_batch.db"
+    batch_dir = tmp_path / "joinquant_exports"
+    write_joinquant_export(batch_dir / "baseline", run_id="jq_baseline", total_return=0.1, sharpe=0.8)
+    bad_candidate = batch_dir / "ma_bad"
+    write_joinquant_export(bad_candidate, run_id="jq_bad", total_return=0.2, sharpe=1.3)
+    (bad_candidate / "trades.csv").unlink()
+
+    exit_code = main(
+        [
+            "--db",
+            str(db_path),
+            "evidence",
+            "joinquant-batch",
+            "--batch-dir",
+            str(batch_dir),
+            "--workflow",
+            "joinquant_batch",
+            "--scenario",
+            "quant_a_share",
+        ]
+    )
+
+    assert exit_code == 1
+    output = capsys.readouterr().out
+    assert "preflight failed" in output
+    assert "ma_bad" in output
+    assert EvidenceHarness(db_path).list_runs(workflow_id="joinquant_batch") == []

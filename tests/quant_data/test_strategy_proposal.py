@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
+from loop_harness.cli import main
 from loop_harness.quant_data.strategy_proposal import (
     QuantStrategyType,
     StrategyProposal,
@@ -102,3 +105,42 @@ def test_unknown_backtest_platform_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="Unsupported quant backtest platform"):
         proposal_to_backtest_config(proposal, platform="unknown")
+
+
+def test_strategy_proposal_to_config_cli_reads_json(tmp_path, capsys) -> None:  # type: ignore[no-untyped-def]
+    proposal_path = tmp_path / "proposal.json"
+    proposal_path.write_text(
+        json.dumps(
+            {
+                "scenario_id": "quant_a_share",
+                "hypothesis": "A 5/20 crossover may improve trend capture versus buy and hold.",
+                "strategy_type": "moving_average_crossover",
+                "universe": ["600519.SH"],
+                "parameters": {"fast_window": 5, "slow_window": 20},
+                "reason": "Historical samples show shorter trend windows deserve a controlled test.",
+                "expected_metric": "sharpe",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "--db",
+            str(tmp_path / "proposal.db"),
+            "evidence",
+            "strategy-proposal-to-config",
+            "--path",
+            str(proposal_path),
+            "--platform",
+            "joinquant",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["platform"] == "joinquant"
+    assert payload["strategy_type"] == "moving_average_crossover"
+    assert payload["parameters"]["fast_window"] == 5
+    assert payload["metadata"]["source_proposal_id"]
