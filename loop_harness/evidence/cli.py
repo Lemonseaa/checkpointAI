@@ -18,6 +18,7 @@ from loop_harness.quant_data.pipeline import AShareQuantLoopPipeline
 from loop_harness.quant_data.platform_export import (
     JoinQuantBatchExportImporter,
     JoinQuantExportAdapter,
+    JoinQuantRealDrillRunner,
     QuantPlatformExport,
     diagnose_joinquant_export,
     evaluate_joinquant_export_quality,
@@ -154,6 +155,15 @@ def register_evidence_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     joinquant_batch_parser.add_argument("--batch-dir", required=True)
     joinquant_batch_parser.add_argument("--workflow", required=True, dest="workflow_id")
     joinquant_batch_parser.add_argument("--scenario", default="quant_a_share", dest="scenario_id")
+
+    joinquant_real_drill_parser = evidence_subparsers.add_parser("joinquant-real-drill")
+    joinquant_real_drill_parser.add_argument("--batch-dir", required=True)
+    joinquant_real_drill_parser.add_argument("--workflow", required=True, dest="workflow_id")
+    joinquant_real_drill_parser.add_argument("--scenario", default="quant_a_share", dest="scenario_id")
+    joinquant_real_drill_parser.add_argument("--normalize-dir")
+    joinquant_real_drill_parser.add_argument("--output-json")
+    joinquant_real_drill_parser.add_argument("--output-markdown")
+    joinquant_real_drill_parser.add_argument("--markdown", action="store_true")
 
     strategy_config_parser = evidence_subparsers.add_parser("strategy-proposal-to-config")
     strategy_config_parser.add_argument("--path", required=True)
@@ -484,6 +494,25 @@ def handle_evidence_command(args: argparse.Namespace, db_path: str) -> int:
             print(str(exc))
             return 1
         _print_json(joinquant_batch_result.model_dump(mode="json"))
+        return 0
+
+    if args.evidence_command == "joinquant-real-drill":
+        try:
+            drill_summary = JoinQuantRealDrillRunner(harness).run(
+                args.batch_dir,
+                workflow_id=args.workflow_id,
+                scenario_id=args.scenario_id,
+                normalize_dir=args.normalize_dir,
+                output_json_path=args.output_json,
+                output_markdown_path=args.output_markdown,
+            )
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(str(exc))
+            return 1
+        if args.markdown:
+            print(drill_summary.markdown)
+        else:
+            _print_json(drill_summary.model_dump(mode="json"))
         return 0
 
     if args.evidence_command == "strategy-proposal-to-config":

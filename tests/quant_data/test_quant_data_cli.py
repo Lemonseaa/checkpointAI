@@ -254,3 +254,102 @@ def test_joinquant_batch_cli_preflight_blocks_partial_import(tmp_path: Path, cap
     assert "preflight failed" in output
     assert "ma_bad" in output
     assert EvidenceHarness(db_path).list_runs(workflow_id="joinquant_batch") == []
+
+
+def test_joinquant_real_drill_cli_outputs_summary(tmp_path: Path, capsys) -> None:
+    batch_dir = tmp_path / "joinquant_exports"
+    write_joinquant_export(batch_dir / "baseline", run_id="jq_baseline", total_return=0.1, sharpe=0.8)
+    write_joinquant_alias_export(batch_dir / "ma_5_20", run_id="jq_ma_5_20")
+
+    exit_code = main(
+        [
+            "--db",
+            str(tmp_path / "jq_real_drill.db"),
+            "evidence",
+            "joinquant-real-drill",
+            "--batch-dir",
+            str(batch_dir),
+            "--workflow",
+            "jq_real_drill",
+            "--scenario",
+            "quant_a_share",
+            "--normalize-dir",
+            str(tmp_path / "normalized"),
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["workflow_id"] == "jq_real_drill"
+    assert payload["scenario_id"] == "quant_a_share"
+    assert payload["diagnosed_count"] == 2
+    assert payload["normalized_count"] == 2
+    assert payload["ready_count"] == 2
+    assert payload["batch_result"]["baseline_run_id"] == "jq_baseline"
+    assert payload["field_issue_stats"]["alias_mappings"]["portfolio_value->equity"] >= 1
+
+
+def test_joinquant_real_drill_cli_outputs_markdown(tmp_path: Path, capsys) -> None:
+    batch_dir = tmp_path / "joinquant_exports"
+    write_joinquant_export(batch_dir / "baseline", run_id="jq_baseline", total_return=0.1, sharpe=0.8)
+    write_joinquant_alias_export(batch_dir / "ma_5_20", run_id="jq_ma_5_20")
+
+    exit_code = main(
+        [
+            "--db",
+            str(tmp_path / "jq_real_drill_md.db"),
+            "evidence",
+            "joinquant-real-drill",
+            "--batch-dir",
+            str(batch_dir),
+            "--workflow",
+            "jq_real_drill",
+            "--scenario",
+            "quant_a_share",
+            "--normalize-dir",
+            str(tmp_path / "normalized_md"),
+            "--markdown",
+        ]
+    )
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "# JoinQuant Real Data Drill Report" in output
+    assert "workflow_id: jq_real_drill" in output
+    assert "ready_count: 2" in output
+
+
+def test_joinquant_real_drill_cli_writes_review_artifacts(tmp_path: Path, capsys) -> None:
+    batch_dir = tmp_path / "joinquant_exports"
+    write_joinquant_export(batch_dir / "baseline", run_id="jq_baseline", total_return=0.1, sharpe=0.8)
+    write_joinquant_alias_export(batch_dir / "ma_5_20", run_id="jq_ma_5_20")
+    json_path = tmp_path / "reports" / "jq_drill.json"
+    markdown_path = tmp_path / "reports" / "jq_drill.md"
+
+    exit_code = main(
+        [
+            "--db",
+            str(tmp_path / "jq_real_drill_files.db"),
+            "evidence",
+            "joinquant-real-drill",
+            "--batch-dir",
+            str(batch_dir),
+            "--workflow",
+            "jq_real_drill",
+            "--scenario",
+            "quant_a_share",
+            "--normalize-dir",
+            str(tmp_path / "normalized_files"),
+            "--output-json",
+            str(json_path),
+            "--output-markdown",
+            str(markdown_path),
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["json_path"] == str(json_path)
+    assert payload["markdown_path"] == str(markdown_path)
+    assert json.loads(json_path.read_text(encoding="utf-8"))["ready_count"] == 2
+    assert markdown_path.read_text(encoding="utf-8").startswith("# JoinQuant Real Data Drill Report")

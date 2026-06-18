@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Any, ClassVar
@@ -91,6 +92,14 @@ class JoinQuantExportQualityReport(BaseModel):
     sample_count: int
 
 
+class SensitiveFinding(BaseModel):
+    """Sensitive data finding inside an external export."""
+
+    file_name: str
+    pattern: str
+    excerpt: str
+
+
 class JoinQuantExportDiagnosis(BaseModel):
     """Human-readable diagnosis for one JoinQuant export directory."""
 
@@ -102,6 +111,7 @@ class JoinQuantExportDiagnosis(BaseModel):
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     field_mappings: dict[str, dict[str, str]] = Field(default_factory=dict)
+    sensitive_findings: list[SensitiveFinding] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
 
 
@@ -116,6 +126,25 @@ class JoinQuantBatchImportResult(BaseModel):
     chart: OptimizationChartPayload
     curve_payload: dict[str, Any]
     paper_trading_discussion: str
+    markdown: str
+
+
+class JoinQuantRealDrillSummary(BaseModel):
+    """End-to-end JoinQuant real-data drill summary."""
+
+    workflow_id: str
+    scenario_id: str
+    batch_dir: str
+    normalize_dir: str | None = None
+    json_path: str | None = None
+    markdown_path: str | None = None
+    diagnosed_count: int
+    normalized_count: int
+    ready_count: int
+    blocked_count: int
+    field_issue_stats: dict[str, Any]
+    diagnoses: list[JoinQuantExportDiagnosis]
+    batch_result: JoinQuantBatchImportResult | None = None
     markdown: str
 
 
@@ -284,11 +313,88 @@ class JoinQuantBatchExportImporter:
         )
 
 
+class JoinQuantRealDrillRunner:
+    """Run a safe JoinQuant batch drill before the UI consumes results."""
+
+    def __init__(self, harness: EvidenceHarness) -> None:
+        self.harness = harness
+
+    def run(
+        self,
+        batch_dir: str | Path,
+        *,
+        workflow_id: str,
+        scenario_id: str,
+        normalize_dir: str | Path | None = None,
+        output_json_path: str | Path | None = None,
+        output_markdown_path: str | Path | None = None,
+    ) -> JoinQuantRealDrillSummary:
+        """Diagnose, optionally normalize, validate, import, and summarize one batch."""
+
+        root = Path(batch_dir)
+        export_dirs = _joinquant_batch_dirs(root)
+        diagnoses = [diagnose_joinquant_export(export_dir) for export_dir in export_dirs]
+        initial_field_issue_stats = _field_issue_stats(diagnoses)
+        normalized_count = 0
+        import_root = root
+
+        if normalize_dir is not None:
+            normalized_root = Path(normalize_dir)
+            for export_dir, diagnosis in zip(export_dirs, diagnoses, strict=True):
+                if diagnosis.repairable and not diagnosis.sensitive_findings:
+                    normalize_joinquant_export(export_dir, normalized_root / export_dir.name)
+                    normalized_count += 1
+            import_root = normalized_root
+            export_dirs = _joinquant_batch_dirs(import_root)
+            diagnoses = [diagnose_joinquant_export(export_dir) for export_dir in export_dirs]
+
+        field_issue_stats = _merge_field_issue_stats(initial_field_issue_stats, _field_issue_stats(diagnoses))
+        ready_count = sum(1 for diagnosis in diagnoses if diagnosis.ready_to_import)
+        blocked_count = len(diagnoses) - ready_count
+        batch_result: JoinQuantBatchImportResult | None = None
+        if diagnoses and blocked_count == 0:
+            batch_result = JoinQuantBatchExportImporter(self.harness).import_batch(
+                import_root,
+                workflow_id=workflow_id,
+                scenario_id=scenario_id,
+            )
+        markdown = _real_drill_markdown(
+            workflow_id=workflow_id,
+            scenario_id=scenario_id,
+            batch_dir=root,
+            normalize_dir=Path(normalize_dir) if normalize_dir is not None else None,
+            diagnoses=diagnoses,
+            normalized_count=normalized_count,
+            field_issue_stats=field_issue_stats,
+            batch_result=batch_result,
+        )
+        summary = JoinQuantRealDrillSummary(
+            workflow_id=workflow_id,
+            scenario_id=scenario_id,
+            batch_dir=str(root),
+            normalize_dir=str(normalize_dir) if normalize_dir is not None else None,
+            json_path=str(output_json_path) if output_json_path is not None else None,
+            markdown_path=str(output_markdown_path) if output_markdown_path is not None else None,
+            diagnosed_count=len(diagnoses),
+            normalized_count=normalized_count,
+            ready_count=ready_count,
+            blocked_count=blocked_count,
+            field_issue_stats=field_issue_stats,
+            diagnoses=diagnoses,
+            batch_result=batch_result,
+            markdown=markdown,
+        )
+        _write_real_drill_artifacts(summary, output_json_path, output_markdown_path)
+        return summary
+
+
 def diagnose_joinquant_export(export_dir: str | Path) -> JoinQuantExportDiagnosis:
     """Diagnose whether one JoinQuant export can be imported or normalized."""
 
     path = Path(export_dir)
     missing = sorted(file_name for file_name in QuantPlatformExport.REQUIRED_FILES if not (path / file_name).exists())
+    sensitive_findings = _scan_sensitive_data(path)
+    sensitive_blockers = [f"sensitive_data:{finding.pattern}" for finding in sensitive_findings]
     field_mappings = {
         "equity_curve.csv": _field_mappings_for_csv(path / "equity_curve.csv"),
         "trades.csv": _field_mappings_for_csv(path / "trades.csv"),
@@ -301,8 +407,9 @@ def diagnose_joinquant_export(export_dir: str | Path) -> JoinQuantExportDiagnosi
             ready_to_import=False,
             repairable=False,
             missing_files=missing,
-            blockers=[f"missing_required_file:{file_name}" for file_name in missing],
+            blockers=[f"missing_required_file:{file_name}" for file_name in missing] + sensitive_blockers,
             field_mappings=field_mappings,
+            sensitive_findings=sensitive_findings,
             recommendations=["Re-export the missing files before import."],
         )
     try:
@@ -313,19 +420,22 @@ def diagnose_joinquant_export(export_dir: str | Path) -> JoinQuantExportDiagnosi
             export_dir=str(path),
             ready_to_import=False,
             repairable=False,
-            blockers=[str(exc)],
+            blockers=[str(exc), *sensitive_blockers],
             field_mappings=field_mappings,
+            sensitive_findings=sensitive_findings,
             recommendations=["Fix the export structure or regenerate the JoinQuant export."],
         )
+    blockers = quality.blockers + sorted(set(sensitive_blockers))
     return JoinQuantExportDiagnosis(
         export_dir=str(path),
         run_id=export.metadata.run_id,
-        ready_to_import=quality.status != "blocked",
+        ready_to_import=quality.status != "blocked" and not sensitive_findings,
         repairable=not missing,
-        blockers=quality.blockers,
+        blockers=blockers,
         warnings=quality.warnings,
         field_mappings=field_mappings,
-        recommendations=_diagnosis_recommendations(quality, field_mappings),
+        sensitive_findings=sensitive_findings,
+        recommendations=_diagnosis_recommendations(quality, field_mappings, sensitive_findings),
     )
 
 
@@ -337,6 +447,8 @@ def normalize_joinquant_export(export_dir: str | Path, output_dir: str | Path) -
     diagnosis = diagnose_joinquant_export(source)
     if not diagnosis.repairable:
         raise ValueError("JoinQuant export is not repairable: " + "; ".join(diagnosis.blockers))
+    if diagnosis.sensitive_findings:
+        raise ValueError("JoinQuant export contains sensitive data: " + "; ".join(diagnosis.blockers))
     target.mkdir(parents=True, exist_ok=True)
     for file_name in ["metadata.json", "metrics.json"]:
         shutil.copyfile(source / file_name, target / file_name)
@@ -373,6 +485,10 @@ def preflight_joinquant_batch(
     loaded: list[tuple[Path, QuantPlatformExport, JoinQuantExportQualityReport]] = []
     for export_dir in [baseline_dir, *candidate_dirs]:
         try:
+            diagnosis = diagnose_joinquant_export(export_dir)
+            if diagnosis.sensitive_findings:
+                errors.append(f"{export_dir.name}: blocked sensitive data {diagnosis.blockers}")
+                continue
             export = QuantPlatformExport.load(export_dir)
             quality = evaluate_joinquant_export_quality(export)
         except (OSError, ValueError) as exc:
@@ -466,6 +582,125 @@ def build_joinquant_curve_payload(
         "equity_curves": equity_curves,
         "drawdown_curves": drawdown_curves,
     }
+
+
+def _joinquant_batch_dirs(root: Path) -> list[Path]:
+    baseline_dir = root / "baseline"
+    if not baseline_dir.exists():
+        raise ValueError("JoinQuant batch drill failed: missing baseline/ directory")
+    candidate_dirs = sorted(path for path in root.iterdir() if path.is_dir() and path.name != "baseline")
+    if not candidate_dirs:
+        raise ValueError("JoinQuant batch drill failed: at least one candidate directory is required")
+    return [baseline_dir, *candidate_dirs]
+
+
+_SENSITIVE_PATTERNS: dict[str, re.Pattern[str]] = {
+    "email": re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),
+    "phone_cn": re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)"),
+    "api_token": re.compile(
+        r"(?i)(api[_-]?key|token|secret|access[_-]?key)\s*[:=]\s*[\"']?[\w.\-]{6,}"
+    ),
+    "account_id": re.compile(r"(?i)(account[_-]?id|broker[_-]?account)\s*[:=]\s*[\"']?[\w.\-]{4,}"),
+    "order_id": re.compile(r"(?i)(order[_-]?id|broker[_-]?order)\s*[:=]\s*[\"']?[\w.\-]{4,}"),
+}
+
+
+def _scan_sensitive_data(export_dir: Path) -> list[SensitiveFinding]:
+    findings: list[SensitiveFinding] = []
+    file_names = [
+        "metadata.json",
+        "metrics.json",
+        "equity_curve.csv",
+        "trades.csv",
+        "positions.csv",
+        "logs.txt",
+    ]
+    for file_name in file_names:
+        file_path = export_dir / file_name
+        if not file_path.exists() or not file_path.is_file():
+            continue
+        try:
+            text = file_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        for pattern_name, pattern in _SENSITIVE_PATTERNS.items():
+            match = pattern.search(text)
+            if match:
+                findings.append(
+                    SensitiveFinding(
+                        file_name=file_name,
+                        pattern=pattern_name,
+                        excerpt=_redacted_excerpt(match.group(0)),
+                    )
+                )
+    return findings
+
+
+def _redacted_excerpt(value: str) -> str:
+    trimmed = value[:80]
+    if ":" in trimmed:
+        prefix = trimmed.split(":", 1)[0]
+        return f"{prefix}:***"
+    if "=" in trimmed:
+        prefix = trimmed.split("=", 1)[0]
+        return f"{prefix}=***"
+    return "***"
+
+
+def _field_issue_stats(diagnoses: list[JoinQuantExportDiagnosis]) -> dict[str, Any]:
+    alias_mappings: dict[str, int] = {}
+    missing_files: dict[str, int] = {}
+    blockers: dict[str, int] = {}
+    sensitive_patterns: dict[str, int] = {}
+    for diagnosis in diagnoses:
+        for mapping in diagnosis.field_mappings.values():
+            for alias, standard in mapping.items():
+                key = f"{alias}->{standard}"
+                alias_mappings[key] = alias_mappings.get(key, 0) + 1
+        for file_name in diagnosis.missing_files:
+            missing_files[file_name] = missing_files.get(file_name, 0) + 1
+        for blocker in diagnosis.blockers:
+            blockers[blocker] = blockers.get(blocker, 0) + 1
+        for finding in diagnosis.sensitive_findings:
+            sensitive_patterns[finding.pattern] = sensitive_patterns.get(finding.pattern, 0) + 1
+    return {
+        "alias_mappings": alias_mappings,
+        "missing_files": missing_files,
+        "blockers": blockers,
+        "sensitive_patterns": sensitive_patterns,
+    }
+
+
+def _write_real_drill_artifacts(
+    summary: JoinQuantRealDrillSummary,
+    output_json_path: str | Path | None,
+    output_markdown_path: str | Path | None,
+) -> None:
+    if output_json_path is not None:
+        json_path = Path(output_json_path)
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.write_text(
+            json.dumps(summary.model_dump(mode="json"), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    if output_markdown_path is not None:
+        markdown_path = Path(output_markdown_path)
+        markdown_path.parent.mkdir(parents=True, exist_ok=True)
+        markdown_path.write_text(summary.markdown, encoding="utf-8")
+
+
+def _merge_field_issue_stats(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for group_name in ["alias_mappings", "missing_files", "blockers", "sensitive_patterns"]:
+        merged_group: dict[str, int] = {}
+        for source in [left.get(group_name, {}), right.get(group_name, {})]:
+            if not isinstance(source, dict):
+                continue
+            for key, value in source.items():
+                if isinstance(key, str) and isinstance(value, int):
+                    merged_group[key] = merged_group.get(key, 0) + value
+        merged[group_name] = merged_group
+    return merged
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
@@ -645,8 +880,11 @@ def _import_readiness_summary(
 def _diagnosis_recommendations(
     quality: JoinQuantExportQualityReport,
     field_mappings: dict[str, dict[str, str]],
+    sensitive_findings: list[SensitiveFinding],
 ) -> list[str]:
     recommendations: list[str] = []
+    if sensitive_findings:
+        recommendations.append("Remove sensitive data before import.")
     if field_mappings:
         recommendations.append("Run joinquant-normalize to write a standard contract copy.")
     if quality.blockers:
@@ -654,6 +892,53 @@ def _diagnosis_recommendations(
     if not recommendations:
         recommendations.append("Export is ready to import.")
     return recommendations
+
+
+def _real_drill_markdown(
+    *,
+    workflow_id: str,
+    scenario_id: str,
+    batch_dir: Path,
+    normalize_dir: Path | None,
+    diagnoses: list[JoinQuantExportDiagnosis],
+    normalized_count: int,
+    field_issue_stats: dict[str, Any],
+    batch_result: JoinQuantBatchImportResult | None,
+) -> str:
+    ready_count = sum(1 for diagnosis in diagnoses if diagnosis.ready_to_import)
+    blocked_count = len(diagnoses) - ready_count
+    lines = [
+        "# JoinQuant Real Data Drill Report",
+        "",
+        f"workflow_id: {workflow_id}",
+        f"scenario_id: {scenario_id}",
+        f"batch_dir: {batch_dir}",
+        f"normalize_dir: {normalize_dir}" if normalize_dir is not None else "normalize_dir: none",
+        f"diagnosed_count: {len(diagnoses)}",
+        f"normalized_count: {normalized_count}",
+        f"ready_count: {ready_count}",
+        f"blocked_count: {blocked_count}",
+        "",
+        "## Diagnosis",
+    ]
+    for diagnosis in diagnoses:
+        run_label = diagnosis.run_id or Path(diagnosis.export_dir).name
+        lines.append(
+            f"- {run_label}: ready={diagnosis.ready_to_import}, blockers={diagnosis.blockers}, "
+            f"warnings={diagnosis.warnings}"
+        )
+    lines.extend(["", "## Field Issue Stats"])
+    for group_name in ["alias_mappings", "missing_files", "blockers", "sensitive_patterns"]:
+        group = field_issue_stats.get(group_name, {})
+        lines.append(f"- {group_name}: {group if group else '{}'}")
+    lines.extend(["", "## Batch Result"])
+    if batch_result is None:
+        lines.append("No import was executed because at least one export is blocked.")
+    else:
+        lines.append(f"- baseline_run_id: {batch_result.baseline_run_id}")
+        lines.append(f"- candidate_run_ids: {batch_result.candidate_run_ids}")
+        lines.append(f"- paper_trading_discussion: {batch_result.paper_trading_discussion}")
+    return "\n".join(lines)
 
 
 def _paper_trading_discussion(

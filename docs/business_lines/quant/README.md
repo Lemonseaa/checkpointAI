@@ -261,6 +261,21 @@ Batch import performs preflight validation before writing any evidence. If one
 candidate is structurally invalid or blocked by quality gates, no run in the
 batch is stored.
 
+Run the full real-data drill sequence:
+
+```bash
+loopharness evidence joinquant-real-drill \
+  --batch-dir examples/joinquant_exports \
+  --workflow joinquant_real_drill \
+  --scenario quant_a_share \
+  --normalize-dir /private/path/joinquant_normalized
+```
+
+The drill runs diagnosis, sensitive-data blocking, optional normalization,
+batch import, comparison, and report generation in one command. Use
+`--markdown` for a readable review note. See
+[reports/joinquant_real_data_acceptance.md](reports/joinquant_real_data_acceptance.md).
+
 The batch output includes:
 
 ```text

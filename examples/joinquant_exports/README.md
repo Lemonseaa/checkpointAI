@@ -25,6 +25,13 @@ joinquant_exports/
 
 ## Validate Before Import
 
+Create a deterministic local fixture batch for acceptance testing:
+
+```bash
+python scripts/business_lines/quant/create_joinquant_fixture.py \
+  --output-dir /tmp/joinquant_fixture
+```
+
 Validate one export without writing to the evidence database:
 
 ```bash
@@ -44,6 +51,21 @@ loopharness evidence joinquant-batch \
 Batch import performs preflight validation before storing evidence. If one
 candidate is structurally invalid or blocked by quality gates, no baseline or
 candidate run is written.
+
+Run the full drill and write review artifacts:
+
+```bash
+loopharness evidence joinquant-real-drill \
+  --batch-dir /tmp/joinquant_fixture \
+  --workflow joinquant_fixture_drill \
+  --scenario quant_a_share \
+  --normalize-dir /tmp/joinquant_fixture_normalized \
+  --output-json /tmp/joinquant_fixture_report.json \
+  --output-markdown /tmp/joinquant_fixture_report.md
+```
+
+Use the fixture to verify wiring only. Replace it with real licensed exports
+before any investment discussion.
 
 ## Minimum Real-Data Requirements
 

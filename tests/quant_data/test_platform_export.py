@@ -11,6 +11,7 @@ from loop_harness.harness import EvidenceHarness
 from loop_harness.quant_data.platform_export import (
     JoinQuantBatchExportImporter,
     JoinQuantExportAdapter,
+    JoinQuantRealDrillRunner,
     QuantPlatformExport,
     diagnose_joinquant_export,
     evaluate_joinquant_export_quality,
@@ -126,6 +127,22 @@ def test_joinquant_diagnose_reports_alias_mappings_and_readiness(tmp_path: Path)
     assert diagnosis.field_mappings["trades.csv"]["code"] == "symbol"
 
 
+def test_joinquant_diagnose_blocks_sensitive_data(tmp_path: Path) -> None:
+    export_dir = tmp_path / "sensitive"
+    write_joinquant_export(export_dir, run_id="jq_sensitive")
+    (export_dir / "logs.txt").write_text(
+        "backtest completed\napi_key=sk-sensitive-token\naccount_id=broker-123456\n",
+        encoding="utf-8",
+    )
+
+    diagnosis = diagnose_joinquant_export(export_dir)
+
+    assert diagnosis.ready_to_import is False
+    assert "sensitive_data:api_token" in diagnosis.blockers
+    assert "sensitive_data:account_id" in diagnosis.blockers
+    assert {finding.pattern for finding in diagnosis.sensitive_findings} == {"api_token", "account_id"}
+
+
 def test_joinquant_normalize_writes_standard_contract_copy(tmp_path: Path) -> None:
     export_dir = tmp_path / "alias"
     output_dir = tmp_path / "normalized"
@@ -138,3 +155,51 @@ def test_joinquant_normalize_writes_standard_contract_copy(tmp_path: Path) -> No
     assert export.metadata.run_id == "jq_alias"
     assert export.equity_curve[0] == {"date": "2020-01-01", "equity": "1.0"}
     assert export.trades[0]["symbol"] == "600519.XSHG"
+
+
+def test_joinquant_real_drill_runner_normalizes_and_imports_batch(tmp_path: Path) -> None:
+    batch_dir = tmp_path / "joinquant_exports"
+    write_joinquant_export(batch_dir / "baseline", run_id="jq_baseline", total_return=0.1, sharpe=0.8)
+    write_joinquant_alias_export(batch_dir / "ma_5_20", run_id="jq_ma_5_20")
+    normalize_dir = tmp_path / "normalized"
+
+    summary = JoinQuantRealDrillRunner(EvidenceHarness(tmp_path / "jq_drill.db")).run(
+        batch_dir,
+        workflow_id="jq_real_drill",
+        scenario_id="quant_a_share",
+        normalize_dir=normalize_dir,
+    )
+
+    assert summary.workflow_id == "jq_real_drill"
+    assert summary.scenario_id == "quant_a_share"
+    assert summary.diagnosed_count == 2
+    assert summary.normalized_count == 2
+    assert summary.ready_count == 2
+    assert summary.blocked_count == 0
+    assert summary.batch_result is not None
+    assert summary.batch_result.baseline_run_id == "jq_baseline"
+    assert summary.field_issue_stats["alias_mappings"]["portfolio_value->equity"] >= 1
+    assert summary.field_issue_stats["missing_files"] == {}
+    assert "# JoinQuant Real Data Drill Report" in summary.markdown
+
+
+def test_joinquant_real_drill_runner_writes_review_artifacts(tmp_path: Path) -> None:
+    batch_dir = tmp_path / "joinquant_exports"
+    write_joinquant_export(batch_dir / "baseline", run_id="jq_baseline", total_return=0.1, sharpe=0.8)
+    write_joinquant_alias_export(batch_dir / "ma_5_20", run_id="jq_ma_5_20")
+    json_path = tmp_path / "reports" / "drill.json"
+    markdown_path = tmp_path / "reports" / "drill.md"
+
+    summary = JoinQuantRealDrillRunner(EvidenceHarness(tmp_path / "jq_drill_artifacts.db")).run(
+        batch_dir,
+        workflow_id="jq_real_drill",
+        scenario_id="quant_a_share",
+        normalize_dir=tmp_path / "normalized",
+        output_json_path=json_path,
+        output_markdown_path=markdown_path,
+    )
+
+    assert summary.json_path == str(json_path)
+    assert summary.markdown_path == str(markdown_path)
+    assert json.loads(json_path.read_text(encoding="utf-8"))["workflow_id"] == "jq_real_drill"
+    assert markdown_path.read_text(encoding="utf-8").startswith("# JoinQuant Real Data Drill Report")
